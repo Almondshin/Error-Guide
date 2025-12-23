@@ -1,17 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { GoogleGenAI, Type } from "@google/genai";
-import mermaid from 'mermaid';
 import ReactMarkdown from 'react-markdown';
-
-// Mermaid 초기화
-mermaid.initialize({ 
-  startOnLoad: false, 
-  theme: 'default',
-  securityLevel: 'loose',
-  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
-  sequence: { useMaxWidth: true, showSequenceNumbers: true, height: 350 }
-});
 
 // --- 타입 정의 ---
 interface ErrorDefinition {
@@ -43,6 +33,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9) + Date.now().to
 
 const sanitizeContent = (text: string) => {
   if (!text) return '';
+  // 줄바꿈 및 특수 공백 처리 최적화
   return text.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n').replace(/&nbsp;/g, ' ');
 };
 
@@ -51,52 +42,32 @@ const SYSTEM_INSTRUCTION_BASE = `
 당신은 Java, Spring Boot 3.x, PostgreSQL 기반 엔터프라이즈 시스템의 수석 아키텍트입니다.
 
 # 핵심 언어 지침 (CRITICAL)
-**모든 분석 결과, 요약, 해결책, 단계별 가이드 및 인사이트는 반드시 한국어로 작성하십시오.** 
-Markdown을 사용하여 가독성을 높이되, 중요한 용어는 **볼드체(**텍스트**)**를 사용하여 강조하십시오.
+1. **모든 분석 결과물은 한국어로 작성하십시오.**
+2. 가독성을 위해 표준 Markdown 문법을 철저히 준수하십시오.
+3. 강조가 필요한 중요 용어(레이어 명칭, 에러 코드 등)는 반드시 **용어** (앞뒤로 별표 두 개) 형태의 볼드체로 작성하십시오.
+4. 문단 구분을 명확히 하여 텍스트가 뭉쳐 보이지 않게 하십시오.
 
 # 핵심 제약 사항
 1. **절대 금지 문구**: "External Interface Layer Identity Data Verification / OTP Validation" 문구 사용 금지.
-2. **레이어 명칭**: 한글 우선 (API 컨트롤러, 비즈니스 서비스, JPA 영속성 등).
-3. **Markdown 준수**: 볼드 처리가 필요한 중요한 용어는 반드시 **용어** 형태로 작성하여 강조하십시오.
-4. **다이어그램**: Mermaid 문법을 사용하십시오.
+2. **레이어 명칭**: 한글 우선 (예: **외부 인터페이스 계층**, **비즈니스 서비스 레이어**, **JPA 영속성 계층** 등).
 `;
 
 // --- 컴포넌트 ---
 
-function MermaidDiagram({ chart }: { chart: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (ref.current && chart) {
-      const renderId = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-      let processed = String(chart).trim().replace(/^```mermaid\n?/, '').replace(/\n?```$/, '');
-
-      const supportedTypes = ['flowchart', 'graph', 'sequenceDiagram', 'stateDiagram', 'erDiagram', 'classDiagram'];
-      const hasType = supportedTypes.some(type => processed.toLowerCase().startsWith(type.toLowerCase()));
-      
-      if (!hasType) {
-        processed = `flowchart TD\n${processed}`;
-      }
-
-      mermaid.render(renderId, processed).then(({ svg }) => {
-        if (ref.current) {
-          ref.current.innerHTML = svg;
-          const svgEl = ref.current.querySelector('svg');
-          if (svgEl) {
-            svgEl.style.maxWidth = '100%';
-            svgEl.style.height = 'auto';
-            svgEl.style.maxHeight = '350px';
-          }
-        }
-      }).catch(err => {
-        console.error("Mermaid Render Error:", err);
-        if (ref.current) {
-          ref.current.innerHTML = `<div class="diag-err">다이어그램 렌더링 오류</div>`;
-        }
-      });
-    }
-  }, [chart]);
-  return <div className="mermaid-outer"><div ref={ref} className="mermaid-container" /></div>;
-}
+const FormattedCell = ({ text, className }: { text: string, className?: string }) => {
+  if (!text) return null;
+  const lines = text.split(/<br\s*\/?>|\n/gi);
+  return (
+    <div className={className}>
+      {lines.map((line, i) => (
+        <React.Fragment key={i}>
+          {line}
+          {i < lines.length - 1 && <br />}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('analyzer');
@@ -114,18 +85,18 @@ function App() {
   
   const [errorSearchTerm, setErrorSearchTerm] = useState('');
   const [errorCurrentPage, setErrorCurrentPage] = useState(1);
-  const itemsPerPage = 8;
+  const itemsPerPage = 12;
 
   const [issueDefs, setIssueDefs] = useState<IssueDefinition[]>([]);
   const [editingIssue, setEditingIssue] = useState<Partial<IssueDefinition> | null>(null);
   const [showIssueForm, setShowIssueForm] = useState(false);
 
   useEffect(() => {
-    const savedHistory = localStorage.getItem('eg_v43_history');
+    const savedHistory = localStorage.getItem('eg_v53_history');
     if (savedHistory) setHistory(JSON.parse(savedHistory));
-    const savedDefs = localStorage.getItem('eg_v43_error_defs');
+    const savedDefs = localStorage.getItem('eg_v53_error_defs');
     if (savedDefs) setErrorDefs(JSON.parse(savedDefs));
-    const savedIssues = localStorage.getItem('eg_v43_issues');
+    const savedIssues = localStorage.getItem('eg_v53_issues');
     if (savedIssues) setIssueDefs(JSON.parse(savedIssues));
   }, []);
 
@@ -134,8 +105,7 @@ function App() {
   const handleHistoryClick = (item: HistoryItem) => {
     setInput(item.input);
     setResult(item.result);
-    const resultSide = document.querySelector('.result-side');
-    if (resultSide) resultSide.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleAnalyze = async () => {
@@ -145,14 +115,14 @@ function App() {
     setResult(null);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const errorCtx = errorDefs.map(d => `[에러코드:${d.code}] ${d.description}`).join('\n');
-      const issueCtx = issueDefs.map(i => `[해결사례] Q:${i.inquiry}/A:${i.answer}`).join('\n');
+      const errorCtx = errorDefs.slice(0, 30).map(d => `[E:${d.code}] ${d.description}`).join('\n');
+      const issueCtx = issueDefs.slice(0, 10).map(i => `[C] Q:${i.inquiry.substring(0, 30)}/A:${i.answer.substring(0, 30)}`).join('\n');
       
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
-        contents: `장애 분석 요청:\n"${input}"`,
+        contents: `Input Trace:\n"${input}"`,
         config: {
-          systemInstruction: SYSTEM_INSTRUCTION_BASE + `\n\n# 참조 데이터:\n${errorCtx}\n\n# 사례 데이터:\n${issueCtx}`,
+          systemInstruction: SYSTEM_INSTRUCTION_BASE + `\n\n# Context:\n${errorCtx}\n\n# Case Base:\n${issueCtx}`,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -160,18 +130,17 @@ function App() {
               diagnosis: { 
                 type: Type.OBJECT, 
                 properties: { 
-                  layer: { type: Type.STRING, description: "장애 발생 레이어" }, 
-                  step: { type: Type.STRING, description: "장애 단계" }, 
-                  summary: { type: Type.STRING, description: "진단 결과 요약 (Markdown)" } 
+                  layer: { type: Type.STRING }, 
+                  step: { type: Type.STRING }, 
+                  summary: { type: Type.STRING } 
                 }, 
                 required: ["layer", "step", "summary"] 
               },
-              solutionDescription: { type: Type.STRING, description: "상세 해결 방안 (Markdown)" },
-              preCheck: { type: Type.STRING, description: "선행 점검 사항" },
-              insight: { type: Type.STRING, description: "전문가 조언 (Markdown)" },
-              mermaidGraph: { type: Type.STRING, description: "Mermaid 다이어그램" }
+              solutionDescription: { type: Type.STRING },
+              preCheck: { type: Type.STRING },
+              insight: { type: Type.STRING }
             },
-            required: ["diagnosis", "solutionDescription", "preCheck", "insight", "mermaidGraph"]
+            required: ["diagnosis", "solutionDescription", "preCheck", "insight"]
           }
         }
       });
@@ -179,9 +148,9 @@ function App() {
       setResult(parsed);
       const newHist = [{ id: generateId(), timestamp: Date.now(), input, result: parsed }, ...history].slice(0, 15);
       setHistory(newHist);
-      persist('eg_v43_history', newHist);
+      persist('eg_v53_history', newHist);
     } catch (e: any) { 
-      setError("분석 중 통신 장애가 발생했습니다: " + e.message); 
+      setError("AI 진단 중 오류가 발생했습니다: " + e.message); 
     } finally { 
       setLoading(false); 
     }
@@ -193,7 +162,7 @@ function App() {
     const item = { ...editingDef, id: editingDef.id || generateId() };
     const updated = editingDef.id ? errorDefs.map(d => d.id === editingDef.id ? item : d) : [item, ...errorDefs];
     setErrorDefs(updated);
-    persist('eg_v43_error_defs', updated);
+    persist('eg_v53_error_defs', updated);
     setShowErrorForm(false);
     setEditingDef(null);
   };
@@ -202,7 +171,7 @@ function App() {
     if (!bulkInput.trim()) return;
     try {
       const parsed = JSON.parse(bulkInput);
-      if (!Array.isArray(parsed)) throw new Error("배열 형식의 JSON이어야 합니다.");
+      if (!Array.isArray(parsed)) throw new Error("JSON 배열 형식이 아닙니다.");
       const newItems = parsed.map(p => ({ 
         id: generateId(),
         code: String(p.code || ''),
@@ -211,18 +180,18 @@ function App() {
       }));
       const updated = [...newItems, ...errorDefs];
       setErrorDefs(updated);
-      persist('eg_v43_error_defs', updated);
+      persist('eg_v53_error_defs', updated);
       setShowBulkImport(false);
       setBulkInput('');
-      alert(`${newItems.length}건의 데이터가 성공적으로 임포트되었습니다.`);
-    } catch (e: any) { alert("Import 실패: " + e.message); }
+      alert(`${newItems.length}건이 임포트되었습니다.`);
+    } catch (e: any) { alert("오류: " + e.message); }
   };
 
   const deleteErrorDef = (id: string) => {
-    if (window.confirm("항목을 삭제하시겠습니까?")) {
+    if (window.confirm("삭제하시겠습니까?")) {
       const updated = errorDefs.filter(d => String(d.id) !== String(id));
       setErrorDefs(updated);
-      persist('eg_v43_error_defs', updated);
+      persist('eg_v53_error_defs', updated);
     }
   };
 
@@ -233,21 +202,21 @@ function App() {
       id: editingIssue.id || generateId(),
       inquiry: String(editingIssue.inquiry),
       answer: String(editingIssue.answer),
-      status: 'resolved',
+      status: (editingIssue.status as any) || 'pending',
       timestamp: Date.now()
     };
     const updated = editingIssue.id ? issueDefs.map(i => i.id === editingIssue.id ? item : i) : [item, ...issueDefs];
     setIssueDefs(updated);
-    persist('eg_v43_issues', updated);
+    persist('eg_v53_issues', updated);
     setShowIssueForm(false);
     setEditingIssue(null);
   };
 
   const deleteIssue = (id: string) => {
-    if (window.confirm("항목을 삭제하시겠습니까?")) {
+    if (window.confirm("사례를 삭제하시겠습니까?")) {
       const updated = issueDefs.filter(i => String(i.id) !== String(id));
       setIssueDefs(updated);
-      persist('eg_v43_issues', updated);
+      persist('eg_v53_issues', updated);
     }
   };
 
@@ -264,108 +233,117 @@ function App() {
 
   return (
     <div className="enterprise-shell">
-      <header className="enterprise-header shadow-sm">
+      <header className="enterprise-header">
         <div className="brand-logo" onClick={() => setActiveTab('analyzer')}>
-          <div className="logo-icon">E</div>
+          <div className="logo-icon">EG</div>
           <div className="logo-text">
             <h1>Error Guide</h1>
-            <span>Professional Enterprise v4.3</span>
+            <span className="version-tag">Professional Edition v5.3</span>
           </div>
         </div>
         <nav className="header-nav">
-          <button className={activeTab === 'analyzer' ? 'active' : ''} onClick={() => setActiveTab('analyzer')}>아키텍처 진단</button>
-          <button className={activeTab === 'error-manager' ? 'active' : ''} onClick={() => setActiveTab('error-manager')}>에러 코드 관리</button>
+          <button className={activeTab === 'analyzer' ? 'active' : ''} onClick={() => setActiveTab('analyzer')}>진단 엔진</button>
+          <button className={activeTab === 'error-manager' ? 'active' : ''} onClick={() => setActiveTab('error-manager')}>에러 관리</button>
           <button className={activeTab === 'issue-manager' ? 'active' : ''} onClick={() => setActiveTab('issue-manager')}>지식 베이스</button>
-          <button className={activeTab === 'mobile-guide' ? 'active' : ''} onClick={() => setActiveTab('mobile-guide')}>휴대폰본인확인 가이드</button>
+          <button className={activeTab === 'mobile-guide' ? 'active' : ''} onClick={() => setActiveTab('mobile-guide')}>기술 가이드</button>
         </nav>
       </header>
 
       <main className="main-viewport">
         {activeTab === 'analyzer' && (
           <div className="view-container animate-fade">
-            <div className="layout-split">
-              <aside className="input-side card">
-                <div className="panel-header">
-                   <h3>장애 진단 요청</h3>
-                   <p>로그, 스택 트레이스 또는 현상을 입력하세요.</p>
-                </div>
-                <div className="field-group mt-4">
-                  <textarea 
-                    value={input} 
-                    onChange={(e) => setInput(e.target.value)} 
-                    placeholder="분석할 에러 로그를 입력하세요..."
-                  />
-                </div>
-                <button className="primary-btn fluid mt-4" onClick={handleAnalyze} disabled={loading || !input.trim()}>
-                  {loading ? '전문가 AI 분석 중...' : '엔터프라이즈 진단 실행'}
-                </button>
-                {error && <div className="alert-error mt-4">{error}</div>}
-                
-                <div className="history-section mt-6">
-                  <div className="flex-between mb-2">
-                    <label className="section-title">최근 분석 히스토리</label>
-                    <button className="text-btn" onClick={() => { setHistory([]); persist('eg_v43_history', []); }}>초기화</button>
+            <div className="layout-grid">
+              <aside className="input-side">
+                <div className="card shadow-lg sticky-aside">
+                  <div className="panel-top">
+                    <h3>장애 정밀 분석</h3>
+                    <p>로그 전문 또는 스택 트레이스를 입력하세요.</p>
                   </div>
-                  <ul className="history-list">
-                    {history.length > 0 ? history.map(h => (
-                      <li key={h.id} className="history-item" onClick={() => handleHistoryClick(h)}>
-                        <div className="hist-meta">
-                          <span className="dot"></span>
-                          <span className="hist-time">{new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <div className="mt-4">
+                    <textarea 
+                      className="expert-textarea"
+                      value={input} 
+                      onChange={(e) => setInput(e.target.value)} 
+                      placeholder="분석할 로그를 붙여넣으세요..."
+                    />
+                  </div>
+                  <button className="primary-btn fluid mt-4" onClick={handleAnalyze} disabled={loading || !input.trim()}>
+                    {loading ? '엔진 가동 중...' : '아키텍처 진단 실행'}
+                  </button>
+                  {error && <div className="alert-error-box mt-3">{error}</div>}
+                  
+                  <div className="history-section mt-8">
+                    <div className="flex-between mb-3">
+                      <label className="overline-title">분석 히스토리</label>
+                      <button className="action-text-btn" onClick={() => { setHistory([]); persist('eg_v53_history', []); }}>Clear</button>
+                    </div>
+                    <div className="history-scroll">
+                      {history.length > 0 ? history.map(h => (
+                        <div key={h.id} className="history-card" onClick={() => handleHistoryClick(h)}>
+                          <div className="h-meta">
+                            <span className="h-indicator"></span>
+                            <span className="h-time">{new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <div className="h-snippet">{h.input.substring(0, 40)}...</div>
                         </div>
-                        <div className="hist-preview">{h.input.substring(0, 45)}...</div>
-                      </li>
-                    )) : <li className="empty-hist">최근 히스토리가 없습니다.</li>}
-                  </ul>
+                      )) : <div className="empty-small">기록이 없습니다.</div>}
+                    </div>
+                  </div>
                 </div>
               </aside>
 
               <section className="result-side">
                 {loading ? (
-                  <div className="loading-state">
-                    <div className="spinner-orbit"></div>
-                    <p>시스템 지식과 아키텍처를 대조하여 원인을 추론 중입니다...</p>
+                  <div className="loading-container card shadow-md">
+                    <div className="loader-ring"></div>
+                    <h3>AI 전문가 엔진 분석 중</h3>
+                    <p>시스템 레이어와 장애 패턴을 대조하여 해결책을 도출하고 있습니다.</p>
                   </div>
                 ) : result ? (
-                  <div className="result-frame animate-slide-up">
-                    <div className="card shadow-md result-card">
-                      <div className="result-meta">
-                        <span className="badge-primary">{result.diagnosis.layer}</span>
-                        <span className="badge-secondary">{result.diagnosis.step}</span>
+                  <div className="result-report animate-slide-up">
+                    <div className="report-card card shadow-lg">
+                      <div className="report-header">
+                        <div className="tag-group">
+                          <span className="tag-solid-primary">{result.diagnosis.layer}</span>
+                          <span className="tag-outline-muted">{result.diagnosis.step}</span>
+                        </div>
+                        <div className="report-info">Diagnostic Code: {generateId().toUpperCase().slice(0, 6)}</div>
                       </div>
                       
-                      <div className="res-group mt-6">
-                        <h4 className="res-label">진단 요약</h4>
-                        <div className="summary-box markdown-content">
+                      <div className="report-section mt-6">
+                        <h4 className="report-label">원인 진단 요약</h4>
+                        <div className="summary-pannel markdown-content">
                           <ReactMarkdown>{sanitizeContent(result.diagnosis.summary)}</ReactMarkdown>
                         </div>
                       </div>
 
-                      <div className="res-group mt-8">
-                        <h4 className="res-label">장애 시퀀스 분석</h4>
-                        <MermaidDiagram chart={result.mermaidGraph} />
-                      </div>
-
-                      <div className="res-group mt-8">
-                        <h4 className="res-label">상세 해결 가이드</h4>
-                        <div className="markdown-content">
+                      <div className="report-section mt-8">
+                        <h4 className="report-label">기술적 조치 가이드</h4>
+                        <div className="rich-content-box markdown-content">
                           <ReactMarkdown>{sanitizeContent(result.solutionDescription)}</ReactMarkdown>
                         </div>
                       </div>
 
-                      <div className="res-group mt-8 border-t pt-6">
-                         <h4 className="res-label">전문가 제언 (Insight)</h4>
-                         <div className="insight-card markdown-content">
-                           <ReactMarkdown>{`💡 ${sanitizeContent(result.insight)}`}</ReactMarkdown>
+                      <div className="report-section mt-10 border-t pt-6">
+                         <div className="insight-hero">
+                           <div className="insight-icon">💡</div>
+                           <div className="insight-body">
+                             <h4 className="insight-title">Architectural Insight</h4>
+                             <div className="insight-text markdown-content">
+                               <ReactMarkdown>{sanitizeContent(result.insight)}</ReactMarkdown>
+                             </div>
+                           </div>
                          </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="empty-state">
-                    <div className="empty-icon">📂</div>
-                    <h3>분석 데이터 대기 중</h3>
-                    <p>로그를 붙여넣거나 히스토리를 클릭하여 진단 리포트를 생성하세요.</p>
+                  <div className="initial-empty-state">
+                    <div className="empty-hero">
+                      <div className="hero-icon-wrap">⚙️</div>
+                      <h2>분석 리포트 대기</h2>
+                      <p>진단을 요청하거나 히스토리를 불러와 전문 리포트를 생성하세요.</p>
+                    </div>
                   </div>
                 )}
               </section>
@@ -375,212 +353,251 @@ function App() {
 
         {activeTab === 'error-manager' && (
           <div className="view-container animate-fade">
-             <div className="view-header flex-between mb-6 error-manager-header">
-                <div className="title-block">
+             <div className="page-header flex-between mb-6">
+                <div>
                   <h2>에러 코드 지식 관리</h2>
-                  <p>시스템 에러 코드와 대응 메시지를 통합 관리합니다.</p>
+                  <p>전사 시스템 에러 표준 가이드를 통합 관리합니다.</p>
                 </div>
-                <div className="action-block">
-                  <button className="secondary-btn" onClick={() => setShowBulkImport(!showBulkImport)}>
-                    {showBulkImport ? '임포트창 닫기' : '대량 임포트'}
-                  </button>
-                  <button className="primary-btn" onClick={() => { setEditingDef({id:'', code:'', description:'', message:''}); setShowErrorForm(true); }}>
-                    개별 등록
-                  </button>
+                <div className="flex gap-2">
+                  <button className="secondary-btn" onClick={() => setShowBulkImport(!showBulkImport)}>대량 임포트</button>
+                  <button className="primary-btn" onClick={() => { setEditingDef({id:'', code:'', description:'', message:''}); setShowErrorForm(true); }}>신규 등록</button>
                 </div>
              </div>
 
              {showBulkImport && (
-                <div className="bulk-editor card shadow-md mb-6 animate-slide-up bulk-import-card">
-                   <div className="flex-between mb-4">
-                      <label className="font-bold">JSON 대량 임포트</label>
-                      <span className="text-muted text-xs">형식: [{"code":"9999", "description":"...", "message":"..."}]</span>
+                <div className="bulk-editor-card card shadow-lg mb-6 animate-slide-up">
+                   <div className="flex-between mb-3">
+                      <label className="font-bold text-sm">JSON 대량 임포트</label>
+                      <code className="code-example">[{`"code": "...", "description": "...", "message": "..."`}]</code>
                    </div>
                    <textarea 
-                     className="bulk-textarea"
+                     className="monotype-textarea"
                      value={bulkInput} 
                      onChange={e => setBulkInput(e.target.value)} 
-                     placeholder='이곳에 JSON 배열을 붙여넣으세요...' 
+                     placeholder='JSON 데이터를 입력하세요...' 
                    />
-                   <div className="flex justify-end mt-4 gap-2">
+                   <div className="flex justify-end mt-3 gap-2">
                       <button className="secondary-btn" onClick={() => setShowBulkImport(false)}>취소</button>
-                      <button className="primary-btn" onClick={handleBulkImport}>데이터 실행</button>
+                      <button className="primary-btn" onClick={handleBulkImport}>임포트 실행</button>
                    </div>
                 </div>
              )}
 
              {showErrorForm && (
-               <div className="form-overlay-card shadow-lg animate-slide-up mb-6">
-                 <form className="card" onSubmit={handleSaveErrorDef}>
-                    <h3 className="mb-4">에러 정의 {editingDef?.id ? '수정' : '등록'}</h3>
-                    <div className="form-grid">
+               <div className="modal-form-overlay card shadow-2xl animate-slide-up mb-8">
+                 <form onSubmit={handleSaveErrorDef}>
+                    <h3 className="mb-4">에러 가이드 {editingDef?.id ? '편집' : '등록'}</h3>
+                    <div className="form-grid-layout">
                       <div className="field">
-                        <label>에러 코드 (ID)</label>
-                        <input type="text" required value={editingDef?.code} onChange={e => setEditingDef({...editingDef!, code: e.target.value})} placeholder="예: 9999" />
+                        <label>에러 코드</label>
+                        <input type="text" required value={editingDef?.code} onChange={e => setEditingDef({...editingDef!, code: e.target.value})} placeholder="CODE-100" />
                       </div>
                       <div className="field">
-                        <label>관리용 설명</label>
-                        <input type="text" required value={editingDef?.description} onChange={e => setEditingDef({...editingDef!, description: e.target.value})} placeholder="장애 상황 요약" />
+                        <label>관리 상세 설명</label>
+                        <input type="text" required value={editingDef?.description} onChange={e => setEditingDef({...editingDef!, description: e.target.value})} placeholder="발생 원인 및 기술적 배경" />
                       </div>
                       <div className="field full">
                         <label>사용자 노출 메시지</label>
-                        <input type="text" required value={editingDef?.message} onChange={e => setEditingDef({...editingDef!, message: e.target.value})} placeholder="공식 안내 문구" />
+                        <textarea required value={editingDef?.message} onChange={e => setEditingDef({...editingDef!, message: e.target.value})} placeholder="고객 안내 문구" style={{height: '100px'}} />
                       </div>
                     </div>
-                    <div className="flex justify-end gap-3 mt-6">
+                    <div className="flex justify-end gap-2 mt-6 border-t pt-5">
                       <button type="button" className="secondary-btn" onClick={() => setShowErrorForm(false)}>취소</button>
-                      <button type="submit" className="primary-btn">저장하기</button>
+                      <button type="submit" className="primary-btn">저장 완료</button>
                     </div>
                  </form>
                </div>
              )}
 
-             <div className="card shadow-sm p-0 overflow-hidden table-card">
-                <div className="table-search-box p-4 border-b">
+             <div className="data-table-container card shadow-sm p-0 overflow-hidden">
+                <div className="search-bar p-4 border-b flex items-center gap-3 bg-gray-50">
+                   <span className="search-icon">🔍</span>
                    <input 
+                     className="ghost-input"
                      type="text" 
-                     placeholder="에러 코드 또는 설명 검색..." 
+                     placeholder="에러 코드 또는 검색어 입력..." 
                      value={errorSearchTerm}
                      onChange={(e) => { setErrorSearchTerm(e.target.value); setErrorCurrentPage(1); }}
                    />
                 </div>
-                <table className="data-table">
-                   <thead>
-                     <tr><th>CODE</th><th>DESCRIPTION</th><th>USER MESSAGE</th><th className="center">ACTION</th></tr>
-                   </thead>
-                   <tbody>
-                     {paginatedErrorDefs.length > 0 ? paginatedErrorDefs.map(d => (
-                       <tr key={d.id}>
-                         <td className="font-mono font-bold text-primary">{d.code}</td>
-                         <td>{d.description}</td>
-                         <td className="text-success">{d.message}</td>
-                         <td className="center">
-                           <div className="flex gap-2 justify-center">
-                             <button className="btn-icon" onClick={() => { setEditingDef(d); setShowErrorForm(true); }}>✏️</button>
-                             <button className="btn-icon danger" onClick={() => deleteErrorDef(d.id)}>🗑️</button>
-                           </div>
-                         </td>
-                       </tr>
-                     )) : (
-                       <tr><td colSpan={4} className="center p-10 text-muted">데이터가 없습니다.</td></tr>
-                     )}
-                   </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="enterprise-table">
+                    <thead>
+                      <tr><th>ERROR CODE</th><th>DESCRIPTION</th><th>USER MESSAGE</th><th className="center">ACTIONS</th></tr>
+                    </thead>
+                    <tbody>
+                      {paginatedErrorDefs.length > 0 ? paginatedErrorDefs.map(d => (
+                        <tr key={d.id}>
+                          <td><span className="code-badge">{d.code}</span></td>
+                          <td className="desc-cell"><FormattedCell text={d.description} /></td>
+                          <td className="msg-cell"><FormattedCell text={d.message} /></td>
+                          <td className="center">
+                            <div className="action-cell-flex">
+                              <button className="table-action-btn edit" onClick={() => { setEditingDef(d); setShowErrorForm(true); }}>편집</button>
+                              <button className="table-action-btn delete" onClick={() => deleteErrorDef(d.id)}>삭제</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={4} className="center py-16 text-muted">일치하는 정보가 없습니다.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
              </div>
           </div>
         )}
 
         {activeTab === 'issue-manager' && (
           <div className="view-container animate-fade">
-             <div className="view-header flex-between mb-6">
-                <div className="title-block">
+             <div className="page-header flex-between mb-6">
+                <div>
                   <h2>장애 해결 지식 베이스</h2>
-                  <p>실제 장애 대응 노하우를 기록합니다.</p>
+                  <p>현장에서 발생한 이슈와 조치 과정을 자산화하여 팀의 역량을 높입니다.</p>
                 </div>
-                <button className="primary-btn" onClick={() => { setEditingIssue({ inquiry: '', answer: '' }); setShowIssueForm(true); }}>새 사례 등록</button>
+                <button className="primary-btn" onClick={() => { setEditingIssue({ inquiry: '', answer: '', status: 'pending' }); setShowIssueForm(true); }}>지식 등록</button>
              </div>
 
              {showIssueForm && (
-                <div className="form-overlay-card shadow-lg mb-6">
-                  <form className="card" onSubmit={handleSaveIssue}>
-                    <h3 className="mb-4">해결 사례 등록</h3>
-                    <div className="field mb-4">
-                      <label>제목</label>
-                      <input type="text" required value={editingIssue?.inquiry} onChange={e => setEditingIssue({...editingIssue!, inquiry: e.target.value})} />
+                <div className="modal-form-overlay card shadow-2xl mb-8 animate-slide-up">
+                  <form onSubmit={handleSaveIssue}>
+                    <h3 className="mb-5">대응 사례 {editingIssue?.id ? '편집' : '작성'}</h3>
+                    <div className="form-stack">
+                      <div className="field mb-5">
+                        <label>상황 및 문의 요약</label>
+                        <textarea 
+                          className="expert-textarea small"
+                          required 
+                          value={editingIssue?.inquiry} 
+                          onChange={e => setEditingIssue({...editingIssue!, inquiry: e.target.value})} 
+                          placeholder="발생한 상황이나 사용자 문의를 기록하세요."
+                        />
+                      </div>
+                      <div className="field mb-5">
+                        <label>해결책 및 가이드 (Markdown)</label>
+                        <textarea 
+                          className="expert-textarea"
+                          required 
+                          value={editingIssue?.answer} 
+                          onChange={e => setEditingIssue({...editingIssue!, answer: e.target.value})} 
+                          placeholder="구체적인 원인과 해결 방법을 기술하세요."
+                          style={{height: '220px'}}
+                        />
+                      </div>
+                      <div className="field mb-5">
+                        <label className="mb-2 block font-bold text-xs">처리 상태</label>
+                        <div className="segmented-control">
+                          <label className={`segment ${editingIssue?.status === 'pending' ? 'active warning' : ''}`}>
+                            <input type="radio" name="status" value="pending" checked={editingIssue?.status === 'pending'} onChange={() => setEditingIssue({...editingIssue!, status: 'pending'})} />
+                            진행중 / 미완료
+                          </label>
+                          <label className={`segment ${editingIssue?.status === 'resolved' ? 'active success' : ''}`}>
+                            <input type="radio" name="status" value="resolved" checked={editingIssue?.status === 'resolved'} onChange={() => setEditingIssue({...editingIssue!, status: 'resolved'})} />
+                            해결 완료
+                          </label>
+                        </div>
+                      </div>
                     </div>
-                    <div className="field">
-                      <label>내용 (Markdown 지원)</label>
-                      <textarea required value={editingIssue?.answer} onChange={e => setEditingIssue({...editingIssue!, answer: e.target.value})} style={{height: '200px'}} />
-                    </div>
-                    <div className="flex justify-end gap-3 mt-6">
+                    <div className="flex justify-end gap-2 mt-6 border-t pt-5">
                       <button type="button" className="secondary-btn" onClick={() => setShowIssueForm(false)}>취소</button>
-                      <button type="submit" className="primary-btn">지식 저장</button>
+                      <button type="submit" className="primary-btn">저장 완료</button>
                     </div>
                   </form>
                 </div>
              )}
 
-             <div className="issue-grid">
-                {issueDefs.map(i => (
-                  <div key={i.id} className="issue-card card shadow-sm">
-                    <div className="flex-between">
-                      <h4 className="issue-title">Q: {i.inquiry}</h4>
+             <div className="issue-layout-grid">
+                {issueDefs.length > 0 ? issueDefs.map(i => (
+                  <div key={i.id} className={`kb-card shadow-md ${i.status}`}>
+                    <div className="kb-card-header flex-between mb-4">
+                      <div className="kb-meta">
+                        <span className={`status-dot ${i.status}`}></span>
+                        <span className="kb-status-text">{i.status === 'resolved' ? 'Resolved' : 'Pending'}</span>
+                        <span className="kb-date">{new Date(i.timestamp).toLocaleDateString()}</span>
+                      </div>
                       <div className="flex gap-2">
-                         <button className="btn-icon" onClick={() => { setEditingIssue(i); setShowIssueForm(true); }}>✏️</button>
-                         <button className="btn-icon danger" onClick={() => deleteIssue(i.id)}>🗑️</button>
+                         <button className="icon-action-btn" onClick={() => { setEditingIssue(i); setShowIssueForm(true); }}>✏️</button>
+                         <button className="icon-action-btn delete" onClick={() => deleteIssue(i.id)}>🗑️</button>
                       </div>
                     </div>
-                    <div className="issue-body markdown-content mt-4">
-                      <ReactMarkdown>{sanitizeContent(i.answer)}</ReactMarkdown>
+                    <div className="kb-body">
+                      <div className="kb-section">
+                        <label className="kb-label">SITUATION</label>
+                        <div className="kb-text-content">
+                          <FormattedCell text={i.inquiry} />
+                        </div>
+                      </div>
+                      <div className="kb-section mt-4 border-t pt-4">
+                        <label className="kb-label">RESOLUTION</label>
+                        <div className="kb-markdown-view markdown-content">
+                          <ReactMarkdown>{sanitizeContent(i.answer)}</ReactMarkdown>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="empty-state-card col-span-full">
+                    <div className="empty-icon-lg">📂</div>
+                    <h3>등록된 사례가 없습니다.</h3>
+                    <p>팀을 위한 첫 장애 조치 가이드를 작성하세요.</p>
+                  </div>
+                )}
              </div>
           </div>
         )}
 
         {activeTab === 'mobile-guide' && (
           <div className="view-container animate-fade">
-             <div className="guide-hero card shadow-md mb-8">
-                <div className="hero-content">
-                  <h2>휴대폰본인확인 기술 가이드</h2>
-                  <p>Mobile-OK 표준 연동 규격 및 API 상세 명세를 확인하여 빠르고 안정적인 시스템을 구축하세요.</p>
-                  <div className="hero-tags mt-4">
-                    <span className="tag">REST API</span>
-                    <span className="tag">Standard Spec</span>
-                    <span className="tag">Security</span>
+             <div className="guide-hero-banner shadow-lg mb-10">
+                <div className="hero-text">
+                  <h2 className="hero-title">Mobile-OK<br/>Dev Support</h2>
+                  <p className="hero-subtitle">표준 인터페이스 연동 및 시스템 구축을 위한 가이드 포털입니다.</p>
+                  <div className="hero-tags mt-5">
+                    <span className="hero-tag">Spec v4.2</span>
+                    <span className="hero-tag">Enterprise Safe</span>
                   </div>
                 </div>
-                <div className="hero-illustration">📘</div>
+                <div className="hero-image-wrap">
+                  <div className="hero-blob"></div>
+                  <span className="hero-icon">🛠️</span>
+                </div>
              </div>
 
-             <div className="guide-grid">
-                <a href="https://manager.mobile-ok.com/guide/mok_std_guide/" target="_blank" rel="noopener noreferrer" className="guide-card-v2 shadow-sm">
-                   <div className="card-top">
-                     <div className="icon-wrap">📜</div>
-                     <div className="link-badge">Official Document</div>
-                   </div>
-                   <div className="card-body">
+             <div className="guide-cards-layout">
+                <a href="https://manager.mobile-ok.com/guide/mok_std_guide/" target="_blank" rel="noopener noreferrer" className="action-card-modern shadow-md">
+                   <div className="action-icon">📘</div>
+                   <div className="action-body">
                      <h3>표준 연동 가이드</h3>
-                     <p>웹/앱 본인확인 표준 인터페이스 정의 및 사용자 흐름도(User Flow) 안내</p>
+                     <p>전체 프로세스 및 플로우에 대한 상세 문서입니다.</p>
                    </div>
-                   <div className="card-footer">
-                     <span>가이드 바로가기</span>
-                     <span className="arrow">→</span>
-                   </div>
+                   <div className="action-footer">Open Document →</div>
                 </a>
 
-                <a href="https://manager.mobile-ok.com/guide/mok_api_guide/" target="_blank" rel="noopener noreferrer" className="guide-card-v2 shadow-sm">
-                   <div className="card-top">
-                     <div className="icon-wrap">🔧</div>
-                     <div className="link-badge">Developer Reference</div>
+                <a href="https://manager.mobile-ok.com/guide/mok_api_guide/" target="_blank" rel="noopener noreferrer" className="action-card-modern shadow-md">
+                   <div className="action-icon">⚡</div>
+                   <div className="action-body">
+                     <h3>API 레퍼런스</h3>
+                     <p>상세 파라미터 및 응답 규격 정의서입니다.</p>
                    </div>
-                   <div className="card-body">
-                     <h3>REST API 상세 규격</h3>
-                     <p>서버 간 통신을 위한 요청/응답 전문 규격, 파라미터 상세 정의 및 에러 코드 명세</p>
-                   </div>
-                   <div className="card-footer">
-                     <span>규격서 바로가기</span>
-                     <span className="arrow">→</span>
-                   </div>
+                   <div className="action-footer">View Reference →</div>
                 </a>
              </div>
 
-             <div className="guide-resources mt-10">
-                <h3 className="section-subtitle">추가 리소스</h3>
-                <div className="resource-list card mt-4">
-                   <div className="resource-item">
-                      <span className="res-icon">💡</span>
-                      <div className="res-info">
-                        <h4>연동 시 유의사항</h4>
-                        <p>본인확인 서비스 연동 시 보안 인증 및 암호화 알고리즘 적용 가이드를 준수해야 합니다.</p>
+             <div className="additional-resources mt-12">
+                <h3 className="overline-title-lg mb-5">보안 및 기술 지원</h3>
+                <div className="resource-grid-modern">
+                   <div className="res-card-flat">
+                      <div className="res-icon">🛡️</div>
+                      <div className="res-content">
+                        <h4>연동 보안 가이드</h4>
+                        <p>암복호화 필수 권고안 및 보안 프로토콜 규격입니다.</p>
                       </div>
                    </div>
-                   <div className="resource-item border-t">
-                      <span className="res-icon">⚙️</span>
-                      <div className="res-info">
+                   <div className="res-card-flat">
+                      <div className="res-icon">🎧</div>
+                      <div className="res-content">
                         <h4>운영 지원 채널</h4>
-                        <p>기술적 문의사항은 Mobile-OK 운영 지원 포털을 통해 문의해 주시기 바랍니다.</p>
+                        <p>기술적 문의는 1:1 지원 포털을 통해 가능합니다.</p>
                       </div>
                    </div>
                 </div>
@@ -594,140 +611,204 @@ function App() {
         
         :root { 
           --primary: #0052CC; 
-          --primary-dark: #0747A6;
-          --bg: #F4F5F7; 
-          --text: #172B4D; 
+          --primary-hover: #0747A6;
+          --primary-soft: #DEEBFF;
+          --bg: #F8FAFC; 
+          --surface: #FFFFFF;
+          --text-main: #172B4D; 
           --text-muted: #6B778C;
+          --text-deep: #091E42;
           --border: #DFE1E6; 
-          --success: #00875A;
-          --danger: #DE350B;
-          --indigo: #403294;
+          --success: #36B37E;
+          --danger: #D73A49; /* More visible red */
+          --warning: #FFAB00;
+          --shadow-sm: 0 1px 2px rgba(9, 30, 66, 0.08);
+          --shadow-md: 0 4px 12px rgba(9, 30, 66, 0.1);
+          --shadow-lg: 0 10px 20px rgba(9, 30, 66, 0.12);
+          --radius-md: 8px;
+          --radius-lg: 12px;
         }
         
-        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text-main); font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; line-height: 1.5; font-size: 0.875rem; }
         .enterprise-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         
-        /* Header */
-        .enterprise-header { height: 72px; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 40px; border-bottom: 1px solid var(--border); z-index: 100; }
-        .brand-logo { display: flex; align-items: center; gap: 14px; cursor: pointer; }
-        .logo-icon { width: 38px; height: 38px; background: var(--primary); border-radius: 10px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.4rem; }
-        .logo-text h1 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.5px; }
-        .logo-text span { font-size: 0.75rem; color: var(--text-muted); }
-        .header-nav { display: flex; gap: 8px; }
-        .header-nav button { border: none; background: none; padding: 10px 18px; font-weight: 700; color: #42526E; cursor: pointer; border-radius: 6px; transition: 0.2s; font-size: 0.95rem; }
-        .header-nav button:hover { background: #F4F5F7; color: var(--primary); }
-        .header-nav button.active { background: #E9F2FF; color: var(--primary); }
-
-        .main-viewport { flex: 1; overflow-y: auto; padding: 30px 40px; }
-        .view-container { max-width: 1300px; margin: 0 auto; }
+        /* Header - Compact */
+        .enterprise-header { height: 60px; background: var(--surface); display: flex; justify-content: space-between; align-items: center; padding: 0 32px; border-bottom: 1px solid var(--border); z-index: 1000; flex-shrink: 0; box-shadow: var(--shadow-sm); }
+        .brand-logo { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .logo-icon { width: 34px; height: 34px; background: var(--primary); border-radius: 8px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.1rem; }
+        .logo-text h1 { margin: 0; font-size: 1rem; font-weight: 800; color: var(--text-deep); letter-spacing: -0.01em; }
+        .version-tag { font-size: 0.65rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; }
         
-        /* Layout */
-        .layout-split { display: grid; grid-template-columns: 380px 1fr; gap: 30px; align-items: start; }
-        .card { background: #fff; border-radius: 12px; padding: 24px; border: 1px solid var(--border); }
-        .shadow-sm { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .shadow-md { box-shadow: 0 4px 12px rgba(9, 30, 66, 0.08); }
+        .header-nav { display: flex; gap: 4px; }
+        .header-nav button { border: none; background: none; padding: 8px 14px; font-weight: 700; color: var(--text-muted); cursor: pointer; border-radius: 6px; transition: 0.2s; font-size: 0.85rem; }
+        .header-nav button:hover { background: var(--bg); color: var(--primary); }
+        .header-nav button.active { background: var(--primary-soft); color: var(--primary); }
 
-        /* History List */
-        .history-section { border-top: 1px solid var(--border); padding-top: 20px; }
-        .section-title { font-weight: 800; font-size: 0.85rem; color: var(--text); }
-        .text-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.75rem; font-weight: 600; padding: 4px; }
-        .text-btn:hover { color: var(--danger); text-decoration: underline; }
-        .history-list { list-style: none; padding: 0; margin: 10px 0; max-height: 350px; overflow-y: auto; }
-        .history-item { 
-          padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border); 
-          background: #FBFBFC; cursor: pointer; transition: 0.2s;
-        }
-        .history-item:hover { border-color: var(--primary); background: #fff; transform: translateX(5px); box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
-        .hist-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-        .dot { width: 6px; height: 6px; background: var(--primary); border-radius: 50%; }
-        .hist-time { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); }
-        .hist-preview { font-size: 0.85rem; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-        .empty-hist { text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 20px; }
+        /* Viewport */
+        .main-viewport { flex: 1; overflow-y: auto; padding: 24px 32px; }
+        .view-container { max-width: 1300px; margin: 0 auto; width: 100%; }
+        
+        /* Layout Grid */
+        .layout-grid { display: grid; grid-template-columns: 340px 1fr; gap: 32px; align-items: start; }
+        .sticky-aside { position: sticky; top: 0; }
 
-        /* Forms */
+        /* Typography */
+        h2 { font-size: 1.5rem; font-weight: 800; color: var(--text-deep); margin-bottom: 4px; letter-spacing: -0.02em; }
+        h3 { font-size: 1.15rem; font-weight: 800; color: var(--text-deep); margin: 0; }
+        p { color: var(--text-muted); font-size: 0.875rem; margin-top: 4px; }
+        .overline-title { font-size: 0.7rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+        /* Cards */
+        .card { background: var(--surface); border-radius: var(--radius-md); padding: 24px; border: 1px solid var(--border); }
+        .shadow-md { box-shadow: var(--shadow-md); }
+        .shadow-lg { box-shadow: var(--shadow-lg); }
+
+        /* Buttons */
+        .primary-btn { background: var(--primary); color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; }
+        .primary-btn:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); }
+        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .secondary-btn { background: #EBECF0; color: var(--text-main); border: none; padding: 8px 18px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 0.85rem; }
+        .secondary-btn:hover { background: #DFE1E6; }
+        .action-text-btn { background: none; border: none; color: var(--primary); font-weight: 800; font-size: 0.75rem; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+
+        /* Form Controls */
         textarea, input[type="text"] { 
-          width: 100%; border: 2px solid var(--border); border-radius: 8px; padding: 12px; 
-          background: #fff !important; color: var(--text) !important; font-family: inherit; font-size: 1rem;
+          width: 100%; border: 1.5px solid var(--border); border-radius: 8px; padding: 12px; 
+          background: #FAFBFC; color: var(--text-deep); font-family: inherit; font-size: 0.9rem;
           box-sizing: border-box; outline: none; transition: 0.2s;
         }
-        textarea:focus, input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,82,204,0.1); }
-        textarea { height: 180px; resize: none; line-height: 1.5; }
-        .primary-btn { background: var(--primary); color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 0.95rem; }
-        .primary-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
-        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .primary-btn.fluid { width: 100%; padding: 14px; }
-        .secondary-btn { background: #EBECF0; color: #44546F; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 0.95rem; }
-        .secondary-btn:hover { background: #DFE1E6; }
+        textarea:focus, input[type="text"]:focus { border-color: var(--primary); background: var(--surface); box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.08); }
+        .expert-textarea { min-height: 280px; resize: none; font-size: 0.875rem; }
+        .expert-textarea.small { min-height: 100px; }
+        .monotype-textarea { font-family: 'Consolas', 'Monaco', monospace; background: #1C2025 !important; color: #E1E4E8 !important; border: none; height: 200px; font-size: 0.85rem; }
+        .ghost-input { border: none !important; background: transparent !important; font-size: 0.95rem !important; font-weight: 600 !important; }
 
-        /* Result Visualization */
-        .result-card { border-top: 4px solid var(--primary); }
-        .badge-primary { background: #EAE6FF; color: var(--indigo); font-weight: 800; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; }
-        .badge-secondary { background: #E3FCEF; color: #006644; font-weight: 800; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; margin-left: 8px; }
-        .res-label { font-size: 1.1rem; border-left: 5px solid var(--primary); padding-left: 15px; margin-bottom: 16px; font-weight: 800; }
-        
-        .markdown-content { font-size: 1.05rem; line-height: 1.7; color: var(--text); }
-        .markdown-content strong { font-weight: 800 !important; color: #000 !important; }
-        .markdown-content p { margin: 10px 0; }
-        .markdown-content ul { padding-left: 20px; margin: 10px 0; }
-        .markdown-content li { margin-bottom: 6px; }
+        /* History */
+        .history-scroll { max-height: 320px; overflow-y: auto; }
+        .history-card { padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid #F3F4F6; background: #F9FAFB; cursor: pointer; transition: 0.2s; }
+        .history-card:hover { border-color: var(--primary); background: var(--surface); }
+        .h-time { font-size: 0.75rem; color: var(--text-muted); font-weight: 700; }
+        .h-snippet { font-size: 0.85rem; color: var(--text-main); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        .summary-box { background: #F4F5F7; padding: 20px; border-radius: 10px; border: 1px solid var(--border); }
-        
-        /* Mermaid Diagram Control */
-        .mermaid-outer { 
-          background: #fff; border: 1px solid var(--border); border-radius: 12px; 
-          margin: 16px 0; overflow: hidden; max-height: 400px;
+        /* Report */
+        .report-card { border-top: 6px solid var(--primary); padding: 24px; }
+        .report-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+        .tag-solid-primary { background: var(--primary); color: #fff; padding: 3px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 800; }
+        .tag-outline-muted { border: 1px solid var(--border); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; margin-left: 6px; }
+        .report-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 12px; }
+        .summary-pannel { background: #F8F9FA; padding: 18px; border-radius: 10px; border-left: 4px solid var(--primary); font-size: 1rem; font-weight: 500; color: var(--text-deep); }
+        .rich-content-box { font-size: 0.9rem; line-height: 1.7; color: #344563; }
+
+        /* Insight */
+        .insight-hero { background: var(--primary-soft); border-radius: 12px; padding: 24px; display: flex; gap: 16px; border: 1px dashed var(--primary); }
+        .insight-icon { font-size: 2rem; }
+        .insight-title { font-size: 0.9rem; font-weight: 800; color: var(--primary-hover); margin-bottom: 4px; }
+        .insight-text { font-size: 0.875rem; color: var(--text-deep); font-weight: 500; }
+
+        /* Markdown Text Optimization */
+        .markdown-content strong {
+            font-weight: 900;
+            color: var(--text-deep);
+            background-color: rgba(0, 82, 204, 0.05);
+            padding: 0 2px;
+            border-radius: 2px;
         }
-        .mermaid-container { display: flex; justify-content: center; padding: 15px; overflow: auto; }
+
+        /* Tables & Action Buttons - Visibility Improved */
+        .enterprise-table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        .enterprise-table th { background: #F8F9FA; text-align: left; padding: 14px 20px; border-bottom: 2px solid var(--border); font-size: 0.75rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; }
+        .enterprise-table td { padding: 14px 20px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 0.875rem; }
+        .code-badge { font-family: 'Consolas', monospace; background: var(--primary-soft); color: var(--primary); padding: 3px 8px; border-radius: 4px; font-weight: 800; font-size: 0.85rem; }
         
-        .insight-card { 
-          background: #EAE6FF; padding: 20px; border-radius: 12px; border: 1px solid #D1C6FF; 
-          color: #2D1E7A; font-weight: 500;
+        .table-action-btn { 
+          background: #fff; border: 1.5px solid var(--border); border-radius: 4px; padding: 6px 14px; 
+          font-weight: 800; cursor: pointer; font-size: 0.8rem; transition: 0.2s; margin: 0 4px;
         }
-        .insight-card strong { color: var(--indigo); font-weight: 900 !important; }
+        .table-action-btn.edit { 
+          color: #0052CC; /* Vivid Primary Blue */
+          border-color: #0052CC;
+        }
+        .table-action-btn.edit:hover { 
+          background: #0052CC; color: #fff;
+        }
+        .table-action-btn.delete { 
+          color: #D73A49; /* Vivid Red */
+          border-color: #D73A49;
+        }
+        .table-action-btn.delete:hover { 
+          background: #D73A49; color: #fff;
+        }
 
-        /* Guide Tab v2 */
-        .guide-hero { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: #fff; padding: 50px; border: none; display: flex; justify-content: space-between; align-items: center; border-radius: 16px; position: relative; overflow: hidden; }
-        .hero-content { z-index: 2; max-width: 60%; }
-        .hero-content h2 { font-size: 2.2rem; margin: 0 0 15px; font-weight: 800; }
-        .hero-content p { font-size: 1.1rem; opacity: 0.9; line-height: 1.6; margin: 0; }
-        .hero-tags { display: flex; gap: 8px; }
-        .tag { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
-        .hero-illustration { font-size: 6rem; opacity: 0.2; transform: rotate(15deg); user-select: none; }
+        /* KB Cards */
+        .issue-layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
+        .kb-card { background: var(--surface); border-radius: var(--radius-md); padding: 20px; border: 1px solid var(--border); border-top: 5px solid #EBECF0; transition: 0.2s ease; }
+        .kb-status-text { font-weight: 800; font-size: 0.7rem; text-transform: uppercase; color: var(--text-deep); }
+        .kb-label { font-size: 0.65rem; font-weight: 800; color: var(--text-muted); margin-bottom: 6px; display: block; letter-spacing: 0.05em; }
+        .kb-text-content { font-size: 0.95rem; font-weight: 700; color: var(--text-deep); line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+        
+        .kb-markdown-view { font-size: 0.875rem; line-height: 1.6; color: #344563; }
 
-        .guide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
-        .guide-card-v2 { background: #fff; border-radius: 16px; padding: 30px; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid var(--border); }
-        .guide-card-v2:hover { transform: translateY(-8px); border-color: var(--primary); box-shadow: 0 15px 35px rgba(0,82,204,0.1); }
-        .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-        .icon-wrap { font-size: 3rem; background: #F4F5F7; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; border-radius: 20px; transition: 0.3s; }
-        .guide-card-v2:hover .icon-wrap { background: #E9F2FF; transform: scale(1.05); }
-        .link-badge { font-size: 0.7rem; font-weight: 800; color: var(--primary); background: #E9F2FF; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
-        .card-body h3 { font-size: 1.4rem; margin: 0 0 12px; color: var(--text); }
-        .card-body p { font-size: 1rem; color: var(--text-muted); line-height: 1.6; margin: 0; }
-        .card-footer { margin-top: auto; padding-top: 25px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--primary); font-size: 0.95rem; }
-        .arrow { font-size: 1.2rem; transition: 0.2s; }
-        .guide-card-v2:hover .arrow { transform: translateX(5px); }
+        /* Segmented Control */
+        .segmented-control { display: flex; gap: 6px; }
+        .segment { flex: 1; border: 1.5px solid var(--border); padding: 10px; border-radius: 8px; font-weight: 800; text-align: center; cursor: pointer; font-size: 0.8rem; background: #FAFBFC; }
+        .segment input { display: none; }
+        .segment.active.warning { border-color: var(--warning); background: #FFF9E6; color: #7A5900; }
+        .segment.active.success { border-color: var(--success); background: #E3FCEF; color: #006644; }
 
-        .section-subtitle { font-size: 1.2rem; font-weight: 800; color: var(--text); }
-        .resource-list { padding: 0; }
-        .resource-item { display: flex; gap: 20px; padding: 25px; }
-        .res-icon { font-size: 1.8rem; }
-        .res-info h4 { margin: 0 0 5px; font-size: 1.05rem; }
-        .res-info p { margin: 0; color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; }
+        /* Guide Hero */
+        .guide-hero-banner { background: linear-gradient(135deg, #091E42 0%, #0052CC 100%); border-radius: 16px; padding: 40px 48px; display: flex; justify-content: space-between; align-items: center; color: #fff; position: relative; overflow: hidden; }
+        .hero-title { font-size: 2.25rem; font-weight: 900; line-height: 1.1; margin: 0; }
+        .hero-subtitle { font-size: 1rem; opacity: 0.9; margin-top: 12px; max-width: 480px; }
+        .hero-icon { font-size: 5rem; z-index: 2; }
 
-        /* Generic Utils */
-        .flex-between { display: flex; justify-content: space-between; align-items: center; }
-        .mt-10 { margin-top: 40px; }
-        .loading-state { text-align: center; padding: 100px 0; color: var(--text-muted); }
-        .spinner-orbit { border: 4px solid rgba(0,0,0,0.05); border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .animate-fade { animation: fadeIn 0.4s; }
+        .guide-cards-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: -32px; padding: 0 32px; position: relative; z-index: 10; }
+        .action-card-modern { background: var(--surface); padding: 32px; border-radius: 16px; text-decoration: none; color: inherit; display: flex; flex-direction: column; gap: 12px; transition: 0.3s; border: 1px solid var(--border); }
+        .action-card-modern:hover { transform: translateY(-8px); border-color: var(--primary); box-shadow: var(--shadow-md); }
+        .action-icon { font-size: 2.5rem; }
+        .action-footer { margin-top: auto; font-weight: 800; color: var(--primary); font-size: 0.85rem; }
+
+        /* Loader */
+        .loader-ring { width: 44px; height: 44px; border: 4px solid var(--primary-soft); border-top: 4px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 24px; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* Animations */
+        .animate-fade { animation: fadeIn 0.4s ease-out; }
+        .animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-slide-up { animation: slideUp 0.4s ease-out; }
-        @keyframes slideUp { from { transform: translateY(15px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .diag-err { color: var(--danger); padding: 15px; font-weight: 700; text-align: center; }
-        .empty-state { text-align: center; padding: 100px 40px; color: var(--text-muted); border: 2px dashed var(--border); border-radius: 16px; }
-        .empty-icon { font-size: 4rem; opacity: 0.2; margin-bottom: 20px; }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        @media (max-width: 1100px) {
+          .layout-grid { grid-template-columns: 1fr; }
+          .guide-cards-layout { grid-template-columns: 1fr; }
+          .issue-layout-grid { grid-template-columns: 1fr; }
+        }
+
+        /* Utils */
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .mt-3 { margin-top: 0.75rem; }
+        .mt-4 { margin-top: 1rem; }
+        .mt-5 { margin-top: 1.25rem; }
+        .mt-6 { margin-top: 1.5rem; }
+        .mt-8 { margin-top: 2rem; }
+        .mt-10 { margin-top: 2.5rem; }
+        .mt-12 { margin-top: 3rem; }
+        .mb-2 { margin-bottom: 0.5rem; }
+        .mb-3 { margin-bottom: 0.75rem; }
+        .mb-4 { margin-bottom: 1rem; }
+        .mb-5 { margin-bottom: 1.25rem; }
+        .mb-6 { margin-bottom: 1.5rem; }
+        .mb-8 { margin-bottom: 2rem; }
+        .mb-10 { margin-bottom: 2.5rem; }
+        .fluid { width: 100%; }
+        .gap-2 { gap: 0.5rem; }
+        .gap-3 { gap: 0.75rem; }
+        .center { text-align: center; }
+        .border-t { border-top: 1px solid var(--border); }
+        .pt-4 { padding-top: 1rem; }
+        .pt-5 { padding-top: 1.25rem; }
+        .pt-6 { padding-top: 1.5rem; }
+        .bg-gray-50 { background-color: #FAFBFC; }
       `}</style>
     </div>
   );
