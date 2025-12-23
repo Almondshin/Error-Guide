@@ -9,7 +9,8 @@ mermaid.initialize({
   startOnLoad: false, 
   theme: 'default',
   securityLevel: 'loose',
-  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' }
+  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+  sequence: { useMaxWidth: true, showSequenceNumbers: true, height: 350 }
 });
 
 // --- 타입 정의 ---
@@ -35,33 +36,29 @@ interface HistoryItem {
   result: any;
 }
 
-type Tab = 'analyzer' | 'error-manager' | 'issue-manager' | 'guide';
+type Tab = 'analyzer' | 'error-manager' | 'issue-manager' | 'mobile-guide';
 
 // --- 유틸리티 ---
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 
 const sanitizeContent = (text: string) => {
   if (!text) return '';
-  // <br> 태그 및 변형들을 실제 개행 문자로 치환
-  return text.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n');
+  return text.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n').replace(/&nbsp;/g, ' ');
 };
 
 const SYSTEM_INSTRUCTION_BASE = `
-# Role: 수석 기술 아키텍트 및 프로덕트 전략가
-당신은 Java, Spring Boot 3.x 기반의 엔터프라이즈 시스템 수석 아키텍트입니다.
+# Role: Senior Technical Architect & Enterprise Consultant
+당신은 Java, Spring Boot 3.x, PostgreSQL 기반 엔터프라이즈 시스템의 수석 아키텍트입니다.
 
-# 분석 지침 (CRITICAL)
-1. **지식 베이스 우선 참조**: "에러 지식 베이스" 및 "문제 해결 지식 베이스"에 등록된 정보를 절대적 기준으로 진단하십시오.
-2. **사례 기반 답변**: 유사한 문의 내용이 있다면 해당 해결답변을 참고하십시오.
-3. **가정적 표현 금지**: 사실 위주로 명확하게 답변하십시오.
-4. **Markdown 활용**: 모든 텍스트 응답은 Markdown 형식을 사용하되, HTML 태그(특히 <br>)는 절대 사용하지 말고 개행(\\n)을 사용하십시오.
-5. **금지 문구**: "External Interface (Telecom Carrier) Identity Verification & OTP Validation"라는 제목이나 문구를 결과에 포함하지 마십시오.
-6. **Mermaid 문법 준수 (매우 중요)**: 
-   - 반드시 'flowchart TD' 형식을 사용하십시오.
-   - 모든 노드의 라벨은 반드시 큰따옴표로 감싸십시오. (예: A["사용자(Client)"])
-   - **화살표 라벨(예: |텍스트|) 내부에 중복 따옴표 ""텍스트"" 를 만들지 마십시오.** 단일 세트의 큰따옴표만 허용됩니다. (예: A -->|"결과 확인"| B)
-   - 화살표 라벨 내부에 대괄호 [ ] 나 중괄호 { } 를 사용하지 마십시오.
-7. **JSON 응답 보장**: 모든 응답은 반드시 지정된 JSON 포맷을 지켜야 합니다.
+# 핵심 언어 지침 (CRITICAL)
+**모든 분석 결과, 요약, 해결책, 단계별 가이드 및 인사이트는 반드시 한국어로 작성하십시오.** 
+Markdown을 사용하여 가독성을 높이되, 중요한 용어는 **볼드체(**텍스트**)**를 사용하여 강조하십시오.
+
+# 핵심 제약 사항
+1. **절대 금지 문구**: "External Interface Layer Identity Data Verification / OTP Validation" 문구 사용 금지.
+2. **레이어 명칭**: 한글 우선 (API 컨트롤러, 비즈니스 서비스, JPA 영속성 등).
+3. **Markdown 준수**: 볼드 처리가 필요한 중요한 용어는 반드시 **용어** 형태로 작성하여 강조하십시오.
+4. **다이어그램**: Mermaid 문법을 사용하십시오.
 `;
 
 // --- 컴포넌트 ---
@@ -70,47 +67,35 @@ function MermaidDiagram({ chart }: { chart: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (ref.current && chart) {
-      const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+      const renderId = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+      let processed = String(chart).trim().replace(/^```mermaid\n?/, '').replace(/\n?```$/, '');
+
+      const supportedTypes = ['flowchart', 'graph', 'sequenceDiagram', 'stateDiagram', 'erDiagram', 'classDiagram'];
+      const hasType = supportedTypes.some(type => processed.toLowerCase().startsWith(type.toLowerCase()));
       
-      // AI가 생성한 문자열에서 코드 블록 마크업 제거 및 기본 정제
-      let cleanChart = String(chart).trim()
-        .replace(/^```mermaid\n?/, '')
-        .replace(/\n?```$/, '')
-        .replace(/@startuml/g, 'sequenceDiagram')
-        .replace(/@enduml/g, '');
-
-      // [방어 코드] Mermaid 문법 자동 보정
-      let processed = cleanChart;
-      
-      // 1. 화살표 라벨 |...| 중복 따옴표 방지 및 특수문자 처리
-      processed = processed.replace(/\|([^|]*)\|/g, (match, p1) => {
-        let content = p1.trim();
-        // 앞뒤의 모든 중복 따옴표 제거 후 단일 따옴표로 재포장
-        content = content.replace(/^"+/, '').replace(/"+$/, '');
-        // 내부 특수문자 보정
-        content = content.replace(/\[/g, '(').replace(/\]/g, ')').replace(/\{/g, '(').replace(/\}/g, ')');
-        return `|"${content}"|`;
-      });
-
-      // 2. 노드 라벨 ID[...] 또는 ID{...} 따옴표 누락 보정
-      // 괄호 안의 내용이 따옴표로 시작하지 않는 경우 따옴표 추가
-      processed = processed.replace(/(\w+)\[([^"\]][^\]]*)\]/g, '$1["$2"]');
-      processed = processed.replace(/(\w+)\{([^"\}][^\}]*)\}/g, '$1{"$2"}');
-
-      // flowchart TD가 누락된 경우 보정
-      if (!processed.startsWith('flowchart') && !processed.startsWith('graph') && !processed.startsWith('sequenceDiagram')) {
+      if (!hasType) {
         processed = `flowchart TD\n${processed}`;
       }
-      
-      mermaid.render(id, processed).then(({ svg }) => {
-        if (ref.current) ref.current.innerHTML = svg;
+
+      mermaid.render(renderId, processed).then(({ svg }) => {
+        if (ref.current) {
+          ref.current.innerHTML = svg;
+          const svgEl = ref.current.querySelector('svg');
+          if (svgEl) {
+            svgEl.style.maxWidth = '100%';
+            svgEl.style.height = 'auto';
+            svgEl.style.maxHeight = '350px';
+          }
+        }
       }).catch(err => {
-        console.error("Mermaid 렌더링 오류:", err);
-        if (ref.current) ref.current.innerHTML = `<div style="color:#D12420; font-size:12px; padding:10px; border:1px solid #FFEBE6; border-radius:4px;">다이어그램 구성 중 문법 오류가 발생했습니다. (AI 응답 재시도 권장)</div>`;
+        console.error("Mermaid Render Error:", err);
+        if (ref.current) {
+          ref.current.innerHTML = `<div class="diag-err">다이어그램 렌더링 오류</div>`;
+        }
       });
     }
   }, [chart]);
-  return <div ref={ref} className="mermaid" style={{ background: '#fff', padding: '15px', borderRadius: '8px', overflow: 'auto', border: '1px solid #EBECF0' }} />;
+  return <div className="mermaid-outer"><div ref={ref} className="mermaid-container" /></div>;
 }
 
 function App() {
@@ -135,156 +120,24 @@ function App() {
   const [editingIssue, setEditingIssue] = useState<Partial<IssueDefinition> | null>(null);
   const [showIssueForm, setShowIssueForm] = useState(false);
 
-  // 로컬 스토리지 초기화
   useEffect(() => {
-    try {
-      const savedHistory = localStorage.getItem('error_guide_history');
-      if (savedHistory) setHistory(JSON.parse(savedHistory));
-
-      const savedDefs = localStorage.getItem('error_definitions');
-      if (savedDefs) {
-        const parsed: any[] = JSON.parse(savedDefs);
-        setErrorDefs(parsed.map(d => ({ 
-          id: String(d.id || generateId()), 
-          code: String(d.code || ''), 
-          description: sanitizeContent(String(d.description || '')), 
-          message: String(d.message || '') 
-        })));
-      }
-
-      const savedIssues = localStorage.getItem('issue_definitions');
-      if (savedIssues) {
-        const parsedIssues: any[] = JSON.parse(savedIssues);
-        setIssueDefs(parsedIssues.map(i => ({
-          ...i,
-          inquiry: String(i.inquiry || ''),
-          answer: sanitizeContent(String(i.answer || ''))
-        })));
-      }
-    } catch (e) {
-      console.error("데이터 로딩 중 오류:", e);
-    }
+    const savedHistory = localStorage.getItem('eg_v43_history');
+    if (savedHistory) setHistory(JSON.parse(savedHistory));
+    const savedDefs = localStorage.getItem('eg_v43_error_defs');
+    if (savedDefs) setErrorDefs(JSON.parse(savedDefs));
+    const savedIssues = localStorage.getItem('eg_v43_issues');
+    if (savedIssues) setIssueDefs(JSON.parse(savedIssues));
   }, []);
 
-  const saveHistory = (newInput: string, newResult: any) => {
-    const newItem = { id: generateId(), timestamp: Date.now(), input: String(newInput), result: newResult };
-    const updated = [newItem, ...history].slice(0, 20);
-    setHistory(updated);
-    localStorage.setItem('error_guide_history', JSON.stringify(updated));
+  const persist = (key: string, data: any) => localStorage.setItem(key, JSON.stringify(data));
+
+  const handleHistoryClick = (item: HistoryItem) => {
+    setInput(item.input);
+    setResult(item.result);
+    const resultSide = document.querySelector('.result-side');
+    if (resultSide) resultSide.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  // 에러 코드 CRUD
-  const handleSaveErrorDef = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingDef) return;
-    const itemToSave = {
-      ...editingDef,
-      id: editingDef.id || generateId(),
-      code: String(editingDef.code || ''),
-      description: sanitizeContent(String(editingDef.description || '')),
-      message: String(editingDef.message || '')
-    };
-    
-    setErrorDefs(prev => {
-      const updated = editingDef.id 
-        ? prev.map(d => d.id === editingDef.id ? itemToSave : d)
-        : [...prev, itemToSave];
-      localStorage.setItem('error_definitions', JSON.stringify(updated));
-      return updated;
-    });
-    
-    setShowErrorForm(false);
-    setEditingDef(null);
-  };
-
-  const deleteErrorDef = (id: string) => {
-    if (window.confirm("항목을 삭제하시겠습니까?")) {
-      setErrorDefs(prev => {
-        const updated = prev.filter(d => String(d.id) !== String(id));
-        localStorage.setItem('error_definitions', JSON.stringify(updated));
-        return updated;
-      });
-    }
-  };
-
-  const handleBulkImport = () => {
-    try {
-      const parsed = JSON.parse(bulkInput);
-      if (!Array.isArray(parsed)) throw new Error("JSON 배열 형식이어야 합니다.");
-      const newItems = parsed.map(p => ({ 
-        id: generateId(),
-        code: String(p.code || ''),
-        description: sanitizeContent(String(p.description || '')),
-        message: String(p.message || '')
-      }));
-      
-      setErrorDefs(prev => {
-        const updated = [...prev, ...newItems];
-        localStorage.setItem('error_definitions', JSON.stringify(updated));
-        return updated;
-      });
-      
-      setShowBulkImport(false);
-      setBulkInput('');
-    } catch (e: any) { alert(e.message); }
-  };
-
-  // 이슈 매니저 CRUD
-  const handleSaveIssue = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingIssue?.inquiry || !editingIssue?.answer) return;
-    const issueToSave: IssueDefinition = {
-      id: editingIssue.id || generateId(),
-      inquiry: String(editingIssue.inquiry || ''),
-      answer: sanitizeContent(String(editingIssue.answer || '')),
-      status: (editingIssue.status as 'resolved' | 'pending') || 'resolved',
-      timestamp: Date.now()
-    };
-    
-    setIssueDefs(prev => {
-      const updated = editingIssue.id 
-        ? prev.map(i => i.id === editingIssue.id ? issueToSave : i)
-        : [issueToSave, ...prev];
-      localStorage.setItem('issue_definitions', JSON.stringify(updated));
-      return updated;
-    });
-    
-    setShowIssueForm(false);
-    setEditingIssue(null);
-  };
-
-  const deleteIssue = (id: string) => {
-    if (window.confirm("이 사례를 삭제하시겠습니까?")) {
-      setIssueDefs(prev => {
-        const updated = prev.filter(i => i.id !== id);
-        localStorage.setItem('issue_definitions', JSON.stringify(updated));
-        return updated;
-      });
-    }
-  };
-
-  // 필터링 및 페이징
-  const filteredErrorDefs = useMemo(() => 
-    errorDefs.filter(d => 
-      String(d.code).toLowerCase().includes(errorSearchTerm.toLowerCase()) || 
-      String(d.description).toLowerCase().includes(errorSearchTerm.toLowerCase()) ||
-      (d.message && String(d.message).toLowerCase().includes(errorSearchTerm.toLowerCase()))
-    ), [errorDefs, errorSearchTerm]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredErrorDefs.length / itemsPerPage));
-
-  useEffect(() => {
-    if (errorCurrentPage > totalPages && totalPages > 0) {
-      setErrorCurrentPage(totalPages);
-    }
-  }, [totalPages, errorCurrentPage]);
-
-  const paginatedErrorDefs = useMemo(() => {
-    const start = (errorCurrentPage - 1) * itemsPerPage;
-    return filteredErrorDefs.slice(start, start + itemsPerPage);
-  }, [filteredErrorDefs, errorCurrentPage]);
-
-  // 분석 실행
   const handleAnalyze = async () => {
     if (!input.trim()) return;
     setLoading(true);
@@ -292,13 +145,14 @@ function App() {
     setResult(null);
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const errorContext = errorDefs.map(d => `[코드:${d.code}] ${d.description}`).join('\n');
-      const issueContext = issueDefs.filter(i => i.status === 'resolved').map(i => `[사례] 문:${i.inquiry}/답:${i.answer}`).join('\n');
+      const errorCtx = errorDefs.map(d => `[에러코드:${d.code}] ${d.description}`).join('\n');
+      const issueCtx = issueDefs.map(i => `[해결사례] Q:${i.inquiry}/A:${i.answer}`).join('\n');
+      
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
-        contents: `분석 요청: "${input}"`,
+        contents: `장애 분석 요청:\n"${input}"`,
         config: {
-          systemInstruction: `${SYSTEM_INSTRUCTION_BASE}\n\n# 참조 지식:\n${errorContext}\n\n# 사례 히스토리:\n${issueContext}`,
+          systemInstruction: SYSTEM_INSTRUCTION_BASE + `\n\n# 참조 데이터:\n${errorCtx}\n\n# 사례 데이터:\n${issueCtx}`,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -306,16 +160,16 @@ function App() {
               diagnosis: { 
                 type: Type.OBJECT, 
                 properties: { 
-                  layer: { type: Type.STRING }, 
-                  step: { type: Type.STRING }, 
-                  summary: { type: Type.STRING } 
+                  layer: { type: Type.STRING, description: "장애 발생 레이어" }, 
+                  step: { type: Type.STRING, description: "장애 단계" }, 
+                  summary: { type: Type.STRING, description: "진단 결과 요약 (Markdown)" } 
                 }, 
                 required: ["layer", "step", "summary"] 
               },
-              solutionDescription: { type: Type.STRING },
-              preCheck: { type: Type.STRING },
-              insight: { type: Type.STRING },
-              mermaidGraph: { type: Type.STRING }
+              solutionDescription: { type: Type.STRING, description: "상세 해결 방안 (Markdown)" },
+              preCheck: { type: Type.STRING, description: "선행 점검 사항" },
+              insight: { type: Type.STRING, description: "전문가 조언 (Markdown)" },
+              mermaidGraph: { type: Type.STRING, description: "Mermaid 다이어그램" }
             },
             required: ["diagnosis", "solutionDescription", "preCheck", "insight", "mermaidGraph"]
           }
@@ -323,360 +177,557 @@ function App() {
       });
       const parsed = JSON.parse(response.text || '{}');
       setResult(parsed);
-      saveHistory(input, parsed);
+      const newHist = [{ id: generateId(), timestamp: Date.now(), input, result: parsed }, ...history].slice(0, 15);
+      setHistory(newHist);
+      persist('eg_v43_history', newHist);
     } catch (e: any) { 
-      setError(String(e.message || e)); 
+      setError("분석 중 통신 장애가 발생했습니다: " + e.message); 
     } finally { 
       setLoading(false); 
     }
   };
 
+  const handleSaveErrorDef = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDef) return;
+    const item = { ...editingDef, id: editingDef.id || generateId() };
+    const updated = editingDef.id ? errorDefs.map(d => d.id === editingDef.id ? item : d) : [item, ...errorDefs];
+    setErrorDefs(updated);
+    persist('eg_v43_error_defs', updated);
+    setShowErrorForm(false);
+    setEditingDef(null);
+  };
+
+  const handleBulkImport = () => {
+    if (!bulkInput.trim()) return;
+    try {
+      const parsed = JSON.parse(bulkInput);
+      if (!Array.isArray(parsed)) throw new Error("배열 형식의 JSON이어야 합니다.");
+      const newItems = parsed.map(p => ({ 
+        id: generateId(),
+        code: String(p.code || ''),
+        description: String(p.description || ''),
+        message: String(p.message || '')
+      }));
+      const updated = [...newItems, ...errorDefs];
+      setErrorDefs(updated);
+      persist('eg_v43_error_defs', updated);
+      setShowBulkImport(false);
+      setBulkInput('');
+      alert(`${newItems.length}건의 데이터가 성공적으로 임포트되었습니다.`);
+    } catch (e: any) { alert("Import 실패: " + e.message); }
+  };
+
+  const deleteErrorDef = (id: string) => {
+    if (window.confirm("항목을 삭제하시겠습니까?")) {
+      const updated = errorDefs.filter(d => String(d.id) !== String(id));
+      setErrorDefs(updated);
+      persist('eg_v43_error_defs', updated);
+    }
+  };
+
+  const handleSaveIssue = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingIssue?.inquiry || !editingIssue?.answer) return;
+    const item: IssueDefinition = {
+      id: editingIssue.id || generateId(),
+      inquiry: String(editingIssue.inquiry),
+      answer: String(editingIssue.answer),
+      status: 'resolved',
+      timestamp: Date.now()
+    };
+    const updated = editingIssue.id ? issueDefs.map(i => i.id === editingIssue.id ? item : i) : [item, ...issueDefs];
+    setIssueDefs(updated);
+    persist('eg_v43_issues', updated);
+    setShowIssueForm(false);
+    setEditingIssue(null);
+  };
+
+  const deleteIssue = (id: string) => {
+    if (window.confirm("항목을 삭제하시겠습니까?")) {
+      const updated = issueDefs.filter(i => String(i.id) !== String(id));
+      setIssueDefs(updated);
+      persist('eg_v43_issues', updated);
+    }
+  };
+
+  const filteredErrorDefs = useMemo(() => 
+    errorDefs.filter(d => 
+      String(d.code).toLowerCase().includes(errorSearchTerm.toLowerCase()) || 
+      String(d.description).toLowerCase().includes(errorSearchTerm.toLowerCase())
+    ), [errorDefs, errorSearchTerm]);
+
+  const paginatedErrorDefs = useMemo(() => {
+    const start = (errorCurrentPage - 1) * itemsPerPage;
+    return filteredErrorDefs.slice(start, start + itemsPerPage);
+  }, [filteredErrorDefs, errorCurrentPage]);
+
   return (
-    <div className="app-container">
-      <header className="main-header">
-        <div className="logo">
-          <h1>에러 가이드 <span className="v-tag">v3.5 Enterprise</span></h1>
-          <p className="sub-logo-text">수석 아키텍트 지능형 통합 진단 플랫폼</p>
+    <div className="enterprise-shell">
+      <header className="enterprise-header shadow-sm">
+        <div className="brand-logo" onClick={() => setActiveTab('analyzer')}>
+          <div className="logo-icon">E</div>
+          <div className="logo-text">
+            <h1>Error Guide</h1>
+            <span>Professional Enterprise v4.3</span>
+          </div>
         </div>
-        <nav className="main-nav">
-          <button className={activeTab === 'analyzer' ? 'active' : ''} onClick={() => setActiveTab('analyzer')}>진단 센터</button>
+        <nav className="header-nav">
+          <button className={activeTab === 'analyzer' ? 'active' : ''} onClick={() => setActiveTab('analyzer')}>아키텍처 진단</button>
           <button className={activeTab === 'error-manager' ? 'active' : ''} onClick={() => setActiveTab('error-manager')}>에러 코드 관리</button>
-          <button className={activeTab === 'issue-manager' ? 'active' : ''} onClick={() => setActiveTab('issue-manager')}>문제 해결 지식 베이스</button>
-          <button className={activeTab === 'guide' ? 'active' : ''} onClick={() => setActiveTab('guide')}>아키텍처 가이드</button>
+          <button className={activeTab === 'issue-manager' ? 'active' : ''} onClick={() => setActiveTab('issue-manager')}>지식 베이스</button>
+          <button className={activeTab === 'mobile-guide' ? 'active' : ''} onClick={() => setActiveTab('mobile-guide')}>휴대폰본인확인 가이드</button>
         </nav>
       </header>
 
-      <main className="main-content">
+      <main className="main-viewport">
         {activeTab === 'analyzer' && (
-          <div className="analyzer-layout">
-            <div className="side-panel">
-              <div className="card shadow-sm">
-                <h3 className="section-title">분석 요청</h3>
-                <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="문의 내용이나 에러 코드를 입력하세요..." />
-                <button className="primary-btn mt-2" onClick={handleAnalyze} disabled={loading || !input.trim()}>
-                  {loading ? '분석 중...' : '해결책 도출'}
-                </button>
-                {error && <div className="error-box mt-2">{String(error)}</div>}
-              </div>
-              <div className="card shadow-sm history-card mt-4">
-                <h3 className="section-title">최근 분석 이력</h3>
-                <ul className="history-list">
-                  {history.map(h => (
-                    <li key={h.id} onClick={() => { setInput(String(h.input)); setResult(h.result); }}>
-                      <span className="h-input">{String(h.input || '').substring(0, 35)}...</span>
-                      <span className="h-date">{new Date(h.timestamp).toLocaleTimeString()}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-            <div className="result-panel">
-              {loading ? (
-                <div className="loading-state"><div className="spinner"></div><p>지식 베이스를 대조하여 해결책을 도출 중입니다...</p></div>
-              ) : result ? (
-                <div className="analysis-result animate-fade">
-                  <div className="header-meta">
-                    <span className="badge layer">{String(result?.diagnosis?.layer || '')}</span>
-                    <span className="badge step">{String(result?.diagnosis?.step || '')}</span>
-                  </div>
-                  <section className="res-section">
-                    <h2 className="res-title">진단 요약</h2>
-                    <p className="summary-text">{String(result?.diagnosis?.summary || '')}</p>
-                  </section>
-                  <section className="res-section pre-check-section highlight">
-                    <div className="section-header">🛡️ <h2 className="res-title">Pre-check 최적화 제안</h2></div>
-                    <div className="precheck-box markdown-body">
-                      <ReactMarkdown>{sanitizeContent(String(result?.preCheck || ''))}</ReactMarkdown>
-                    </div>
-                  </section>
-                  <section className="res-section">
-                    <h2 className="res-title">장애 지점 시퀀스</h2>
-                    <MermaidDiagram chart={String(result?.mermaidGraph || '')} />
-                  </section>
-                  <section className="res-section solution-section">
-                    <h2 className="res-title">상세 해결 가이드</h2>
-                    <div className="solution-description-box markdown-body">
-                      <ReactMarkdown>{sanitizeContent(String(result?.solutionDescription || ''))}</ReactMarkdown>
-                    </div>
-                  </section>
+          <div className="view-container animate-fade">
+            <div className="layout-split">
+              <aside className="input-side card">
+                <div className="panel-header">
+                   <h3>장애 진단 요청</h3>
+                   <p>로그, 스택 트레이스 또는 현상을 입력하세요.</p>
                 </div>
-              ) : (
-                <div className="welcome-state">🔍 왼쪽 패널에 에러 정보를 입력하여 분석을 시작하세요.</div>
-              )}
+                <div className="field-group mt-4">
+                  <textarea 
+                    value={input} 
+                    onChange={(e) => setInput(e.target.value)} 
+                    placeholder="분석할 에러 로그를 입력하세요..."
+                  />
+                </div>
+                <button className="primary-btn fluid mt-4" onClick={handleAnalyze} disabled={loading || !input.trim()}>
+                  {loading ? '전문가 AI 분석 중...' : '엔터프라이즈 진단 실행'}
+                </button>
+                {error && <div className="alert-error mt-4">{error}</div>}
+                
+                <div className="history-section mt-6">
+                  <div className="flex-between mb-2">
+                    <label className="section-title">최근 분석 히스토리</label>
+                    <button className="text-btn" onClick={() => { setHistory([]); persist('eg_v43_history', []); }}>초기화</button>
+                  </div>
+                  <ul className="history-list">
+                    {history.length > 0 ? history.map(h => (
+                      <li key={h.id} className="history-item" onClick={() => handleHistoryClick(h)}>
+                        <div className="hist-meta">
+                          <span className="dot"></span>
+                          <span className="hist-time">{new Date(h.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div className="hist-preview">{h.input.substring(0, 45)}...</div>
+                      </li>
+                    )) : <li className="empty-hist">최근 히스토리가 없습니다.</li>}
+                  </ul>
+                </div>
+              </aside>
+
+              <section className="result-side">
+                {loading ? (
+                  <div className="loading-state">
+                    <div className="spinner-orbit"></div>
+                    <p>시스템 지식과 아키텍처를 대조하여 원인을 추론 중입니다...</p>
+                  </div>
+                ) : result ? (
+                  <div className="result-frame animate-slide-up">
+                    <div className="card shadow-md result-card">
+                      <div className="result-meta">
+                        <span className="badge-primary">{result.diagnosis.layer}</span>
+                        <span className="badge-secondary">{result.diagnosis.step}</span>
+                      </div>
+                      
+                      <div className="res-group mt-6">
+                        <h4 className="res-label">진단 요약</h4>
+                        <div className="summary-box markdown-content">
+                          <ReactMarkdown>{sanitizeContent(result.diagnosis.summary)}</ReactMarkdown>
+                        </div>
+                      </div>
+
+                      <div className="res-group mt-8">
+                        <h4 className="res-label">장애 시퀀스 분석</h4>
+                        <MermaidDiagram chart={result.mermaidGraph} />
+                      </div>
+
+                      <div className="res-group mt-8">
+                        <h4 className="res-label">상세 해결 가이드</h4>
+                        <div className="markdown-content">
+                          <ReactMarkdown>{sanitizeContent(result.solutionDescription)}</ReactMarkdown>
+                        </div>
+                      </div>
+
+                      <div className="res-group mt-8 border-t pt-6">
+                         <h4 className="res-label">전문가 제언 (Insight)</h4>
+                         <div className="insight-card markdown-content">
+                           <ReactMarkdown>{`💡 ${sanitizeContent(result.insight)}`}</ReactMarkdown>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <div className="empty-icon">📂</div>
+                    <h3>분석 데이터 대기 중</h3>
+                    <p>로그를 붙여넣거나 히스토리를 클릭하여 진단 리포트를 생성하세요.</p>
+                  </div>
+                )}
+              </section>
             </div>
           </div>
         )}
 
         {activeTab === 'error-manager' && (
-          <div className="manager-view card shadow-sm animate-fade">
-            <div className="card-header flex justify-between items-center">
-              <h2 className="section-title-lg mb-0">에러 코드 지식 관리</h2>
-              <div className="action-group">
-                <button className="secondary-btn" onClick={() => { setShowBulkImport(!showBulkImport); setShowErrorForm(false); }}>대량 임포트</button>
-                <button className="add-btn" onClick={() => { setEditingDef({id:'', code:'', description:'', message:''}); setShowErrorForm(true); setShowBulkImport(false); }}>개별 추가</button>
-              </div>
-            </div>
-            
-            <div className="table-controls mt-6">
-              <input type="text" placeholder="코드, 설명 또는 메시지로 검색..." value={errorSearchTerm} onChange={(e) => { setErrorSearchTerm(e.target.value); setErrorCurrentPage(1); }} className="search-input" />
-            </div>
-
-            {showErrorForm && (
-              <form className="edit-form card mt-4 border-2 border-accent" onSubmit={handleSaveErrorDef}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="input-group">
-                    <label>에러 코드</label>
-                    <input required value={editingDef?.code || ''} onChange={e => setEditingDef({...editingDef!, code: e.target.value})} placeholder="예: 2910" />
-                  </div>
-                  <div className="input-group">
-                    <label>에러 설명 (관리용)</label>
-                    <textarea required value={editingDef?.description || ''} onChange={e => setEditingDef({...editingDef!, description: e.target.value})} placeholder="상세 기술적 오류 원인" style={{height: '60px'}} />
-                  </div>
-                  <div className="input-group md:col-span-2">
-                    <label>고객 노출 메시지</label>
-                    <textarea required value={editingDef?.message || ''} onChange={e => setEditingDef({...editingDef!, message: e.target.value})} placeholder="사용자에게 보여질 안내 문구" style={{height: '60px'}} />
-                  </div>
+          <div className="view-container animate-fade">
+             <div className="view-header flex-between mb-6 error-manager-header">
+                <div className="title-block">
+                  <h2>에러 코드 지식 관리</h2>
+                  <p>시스템 에러 코드와 대응 메시지를 통합 관리합니다.</p>
                 </div>
-                <div className="form-actions mt-4 flex justify-end gap-2">
-                  <button type="submit" className="primary-btn w-auto px-10">데이터 저장</button>
-                  <button type="button" className="cancel-btn" onClick={() => { setShowErrorForm(false); setEditingDef(null); }}>취소</button>
+                <div className="action-block">
+                  <button className="secondary-btn" onClick={() => setShowBulkImport(!showBulkImport)}>
+                    {showBulkImport ? '임포트창 닫기' : '대량 임포트'}
+                  </button>
+                  <button className="primary-btn" onClick={() => { setEditingDef({id:'', code:'', description:'', message:''}); setShowErrorForm(true); }}>
+                    개별 등록
+                  </button>
                 </div>
-              </form>
-            )}
+             </div>
 
-            {showBulkImport && (
-              <div className="bulk-box card mt-4 bg-gray-50 border-dashed border-2">
-                <label className="font-bold">JSON 대량 임포트 (기존 데이터 유지)</label>
-                <textarea className="mt-2" value={bulkInput} onChange={e => setBulkInput(e.target.value)} placeholder='[{"code":"5033", "description":"...", "message":"..."}]' />
-                <div className="flex justify-end mt-2">
-                   <button className="primary-btn" onClick={handleBulkImport}>데이터 실행</button>
+             {showBulkImport && (
+                <div className="bulk-editor card shadow-md mb-6 animate-slide-up bulk-import-card">
+                   <div className="flex-between mb-4">
+                      <label className="font-bold">JSON 대량 임포트</label>
+                      <span className="text-muted text-xs">형식: [{"code":"9999", "description":"...", "message":"..."}]</span>
+                   </div>
+                   <textarea 
+                     className="bulk-textarea"
+                     value={bulkInput} 
+                     onChange={e => setBulkInput(e.target.value)} 
+                     placeholder='이곳에 JSON 배열을 붙여넣으세요...' 
+                   />
+                   <div className="flex justify-end mt-4 gap-2">
+                      <button className="secondary-btn" onClick={() => setShowBulkImport(false)}>취소</button>
+                      <button className="primary-btn" onClick={handleBulkImport}>데이터 실행</button>
+                   </div>
                 </div>
-              </div>
-            )}
+             )}
 
-            <div className="table-responsive mt-6">
-              <table className="def-table">
-                <thead>
-                  <tr>
-                    <th style={{width: '12%'}}>에러코드</th>
-                    <th style={{width: '33%'}}>설명</th>
-                    <th style={{width: '40%'}}>고객메세지</th>
-                    <th style={{width: '15%', textAlign: 'center'}}>관리</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedErrorDefs.map(d => (
-                    <tr key={d.id}>
-                      <td className="code-cell">{String(d.code || '')}</td>
-                      <td className="data-text" style={{ whiteSpace: 'pre-wrap' }}>{String(d.description || '')}</td>
-                      <td className="data-text msg-text" dangerouslySetInnerHTML={{ __html: String(d.message || '-') }}></td>
-                      <td style={{textAlign: 'center'}}>
-                        <div className="flex justify-center gap-2">
-                          <button className="edit-btn-small" onClick={() => { setEditingDef(d); setShowErrorForm(true); setShowBulkImport(false); }}>수정</button>
-                          <button className="del-btn-small" onClick={() => deleteErrorDef(d.id)}>삭제</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {paginatedErrorDefs.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="text-center py-10 text-gray-400">등록된 데이터가 없거나 검색 결과가 없습니다.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+             {showErrorForm && (
+               <div className="form-overlay-card shadow-lg animate-slide-up mb-6">
+                 <form className="card" onSubmit={handleSaveErrorDef}>
+                    <h3 className="mb-4">에러 정의 {editingDef?.id ? '수정' : '등록'}</h3>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label>에러 코드 (ID)</label>
+                        <input type="text" required value={editingDef?.code} onChange={e => setEditingDef({...editingDef!, code: e.target.value})} placeholder="예: 9999" />
+                      </div>
+                      <div className="field">
+                        <label>관리용 설명</label>
+                        <input type="text" required value={editingDef?.description} onChange={e => setEditingDef({...editingDef!, description: e.target.value})} placeholder="장애 상황 요약" />
+                      </div>
+                      <div className="field full">
+                        <label>사용자 노출 메시지</label>
+                        <input type="text" required value={editingDef?.message} onChange={e => setEditingDef({...editingDef!, message: e.target.value})} placeholder="공식 안내 문구" />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                      <button type="button" className="secondary-btn" onClick={() => setShowErrorForm(false)}>취소</button>
+                      <button type="submit" className="primary-btn">저장하기</button>
+                    </div>
+                 </form>
+               </div>
+             )}
 
-            {totalPages > 1 && (
-              <div className="pagination mt-6">
-                <button disabled={errorCurrentPage === 1} onClick={() => setErrorCurrentPage(p => p - 1)} className="page-btn">이전</button>
-                <div className="page-numbers flex gap-2">
-                  {[...Array(totalPages)].map((_, i) => (
-                    <button 
-                      key={i} 
-                      onClick={() => setErrorCurrentPage(i + 1)} 
-                      className={`page-num-btn ${errorCurrentPage === i + 1 ? 'active' : ''}`}
-                    >
-                      {i + 1}
-                    </button>
-                  ))}
+             <div className="card shadow-sm p-0 overflow-hidden table-card">
+                <div className="table-search-box p-4 border-b">
+                   <input 
+                     type="text" 
+                     placeholder="에러 코드 또는 설명 검색..." 
+                     value={errorSearchTerm}
+                     onChange={(e) => { setErrorSearchTerm(e.target.value); setErrorCurrentPage(1); }}
+                   />
                 </div>
-                <button disabled={errorCurrentPage === totalPages} onClick={() => setErrorCurrentPage(p => p + 1)} className="page-btn">다음</button>
-              </div>
-            )}
+                <table className="data-table">
+                   <thead>
+                     <tr><th>CODE</th><th>DESCRIPTION</th><th>USER MESSAGE</th><th className="center">ACTION</th></tr>
+                   </thead>
+                   <tbody>
+                     {paginatedErrorDefs.length > 0 ? paginatedErrorDefs.map(d => (
+                       <tr key={d.id}>
+                         <td className="font-mono font-bold text-primary">{d.code}</td>
+                         <td>{d.description}</td>
+                         <td className="text-success">{d.message}</td>
+                         <td className="center">
+                           <div className="flex gap-2 justify-center">
+                             <button className="btn-icon" onClick={() => { setEditingDef(d); setShowErrorForm(true); }}>✏️</button>
+                             <button className="btn-icon danger" onClick={() => deleteErrorDef(d.id)}>🗑️</button>
+                           </div>
+                         </td>
+                       </tr>
+                     )) : (
+                       <tr><td colSpan={4} className="center p-10 text-muted">데이터가 없습니다.</td></tr>
+                     )}
+                   </tbody>
+                </table>
+             </div>
           </div>
         )}
 
         {activeTab === 'issue-manager' && (
-          <div className="issue-manager card shadow-sm animate-fade">
-            <div className="card-header flex justify-between items-center">
-              <h2 className="section-title-lg mb-0">문제 해결 지식 베이스 (사례 관리)</h2>
-              <button className="add-btn" onClick={() => { setEditingIssue({ inquiry: '', answer: '', status: 'resolved' }); setShowIssueForm(true); }}>새 사례 추가</button>
-            </div>
-            {showIssueForm && (
-              <form className="edit-form card mt-4 border-2 border-accent" onSubmit={handleSaveIssue}>
-                <div className="input-group">
-                  <label>사용자 문의 내용</label>
-                  <textarea required value={editingIssue?.inquiry || ''} onChange={e => setEditingIssue({ ...editingIssue!, inquiry: e.target.value })} placeholder="예: 인증번호가 오지 않아요" />
+          <div className="view-container animate-fade">
+             <div className="view-header flex-between mb-6">
+                <div className="title-block">
+                  <h2>장애 해결 지식 베이스</h2>
+                  <p>실제 장애 대응 노하우를 기록합니다.</p>
                 </div>
-                <div className="input-group mt-3">
-                  <label>해결 답변/가이드</label>
-                  <textarea required value={editingIssue?.answer || ''} onChange={e => setEditingIssue({ ...editingIssue!, answer: e.target.value })} placeholder="예: 스팸 문자함을 확인하고, 대역폭 차단 여부를..." />
+                <button className="primary-btn" onClick={() => { setEditingIssue({ inquiry: '', answer: '' }); setShowIssueForm(true); }}>새 사례 등록</button>
+             </div>
+
+             {showIssueForm && (
+                <div className="form-overlay-card shadow-lg mb-6">
+                  <form className="card" onSubmit={handleSaveIssue}>
+                    <h3 className="mb-4">해결 사례 등록</h3>
+                    <div className="field mb-4">
+                      <label>제목</label>
+                      <input type="text" required value={editingIssue?.inquiry} onChange={e => setEditingIssue({...editingIssue!, inquiry: e.target.value})} />
+                    </div>
+                    <div className="field">
+                      <label>내용 (Markdown 지원)</label>
+                      <textarea required value={editingIssue?.answer} onChange={e => setEditingIssue({...editingIssue!, answer: e.target.value})} style={{height: '200px'}} />
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                      <button type="button" className="secondary-btn" onClick={() => setShowIssueForm(false)}>취소</button>
+                      <button type="submit" className="primary-btn">지식 저장</button>
+                    </div>
+                  </form>
                 </div>
-                <div className="form-actions mt-4 flex justify-end gap-2">
-                  <button type="submit" className="primary-btn w-auto px-10">사례 저장</button>
-                  <button type="button" className="cancel-btn" onClick={() => setShowIssueForm(false)}>취소</button>
-                </div>
-              </form>
-            )}
-            <div className="issue-list mt-6 grid gap-4">
-              {issueDefs.length > 0 ? issueDefs.map(issue => (
-                <div key={issue.id} className="issue-card border p-4 rounded-lg bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <h4 className="issue-inquiry font-bold text-lg">Q: {String(issue.inquiry || '')}</h4>
-                    <div className="actions flex gap-2">
-                      <button className="small-edit-btn" onClick={() => { setEditingIssue(issue); setShowIssueForm(true); }}>수정</button>
-                      <button className="small-del-btn" onClick={() => deleteIssue(issue.id)}>삭제</button>
+             )}
+
+             <div className="issue-grid">
+                {issueDefs.map(i => (
+                  <div key={i.id} className="issue-card card shadow-sm">
+                    <div className="flex-between">
+                      <h4 className="issue-title">Q: {i.inquiry}</h4>
+                      <div className="flex gap-2">
+                         <button className="btn-icon" onClick={() => { setEditingIssue(i); setShowIssueForm(true); }}>✏️</button>
+                         <button className="btn-icon danger" onClick={() => deleteIssue(i.id)}>🗑️</button>
+                      </div>
+                    </div>
+                    <div className="issue-body markdown-content mt-4">
+                      <ReactMarkdown>{sanitizeContent(i.answer)}</ReactMarkdown>
                     </div>
                   </div>
-                  <div className="issue-answer mt-2 p-3 bg-white rounded border text-gray-700" style={{ whiteSpace: 'pre-wrap' }}>
-                    <strong>A:</strong> {String(issue.answer || '')}
-                  </div>
-                  <div className="meta mt-2 text-xs text-gray-400">등록일: {new Date(issue.timestamp).toLocaleString()}</div>
-                </div>
-              )) : <div className="text-center py-10 text-gray-400">등록된 해결 사례가 없습니다.</div>}
-            </div>
+                ))}
+             </div>
           </div>
         )}
 
-        {activeTab === 'guide' && (
-          <div className="guide-view animate-fade">
-            <div className="card shadow-sm mb-6 bg-blue-50 border-blue-200">
-              <h2 className="section-title-lg">휴대폰 본인확인 통합 매뉴얼</h2>
-              <p className="text-gray-700 leading-relaxed">
-                시스템 설계 및 연동 시 다음의 공식 가이드를 참조하십시오. 
-                각 버튼 클릭 시 상세 매뉴얼이 새 창으로 열립니다.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <a 
-                href="https://manager.mobile-ok.com/guide/mok_std_guide/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="guide-link-card card shadow-sm hover-effect"
-              >
-                <div className="guide-icon">📋</div>
-                <div className="guide-content">
-                  <h3 className="res-title">표준창 가이드</h3>
-                  <p className="text-sm text-gray-600 mt-2">
-                    웹/모바일 표준창 연동 방식의 상세 인터페이스 및 화면 구성 가이드입니다.
-                  </p>
-                  <span className="link-badge mt-4">바로가기 →</span>
+        {activeTab === 'mobile-guide' && (
+          <div className="view-container animate-fade">
+             <div className="guide-hero card shadow-md mb-8">
+                <div className="hero-content">
+                  <h2>휴대폰본인확인 기술 가이드</h2>
+                  <p>Mobile-OK 표준 연동 규격 및 API 상세 명세를 확인하여 빠르고 안정적인 시스템을 구축하세요.</p>
+                  <div className="hero-tags mt-4">
+                    <span className="tag">REST API</span>
+                    <span className="tag">Standard Spec</span>
+                    <span className="tag">Security</span>
+                  </div>
                 </div>
-              </a>
+                <div className="hero-illustration">📘</div>
+             </div>
 
-              <a 
-                href="https://manager.mobile-ok.com/guide/mok_api_guide/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="guide-link-card card shadow-sm hover-effect"
-              >
-                <div className="guide-icon">⚙️</div>
-                <div className="guide-content">
-                  <h3 className="res-title">API 가이드</h3>
-                  <p className="text-sm text-gray-600 mt-2">
-                    서버 간 통신(API)을 통한 본인확인 요청 및 결과 수신을 위한 기술 규격서입니다.
-                  </p>
-                  <span className="link-badge mt-4">바로가기 →</span>
+             <div className="guide-grid">
+                <a href="https://manager.mobile-ok.com/guide/mok_std_guide/" target="_blank" rel="noopener noreferrer" className="guide-card-v2 shadow-sm">
+                   <div className="card-top">
+                     <div className="icon-wrap">📜</div>
+                     <div className="link-badge">Official Document</div>
+                   </div>
+                   <div className="card-body">
+                     <h3>표준 연동 가이드</h3>
+                     <p>웹/앱 본인확인 표준 인터페이스 정의 및 사용자 흐름도(User Flow) 안내</p>
+                   </div>
+                   <div className="card-footer">
+                     <span>가이드 바로가기</span>
+                     <span className="arrow">→</span>
+                   </div>
+                </a>
+
+                <a href="https://manager.mobile-ok.com/guide/mok_api_guide/" target="_blank" rel="noopener noreferrer" className="guide-card-v2 shadow-sm">
+                   <div className="card-top">
+                     <div className="icon-wrap">🔧</div>
+                     <div className="link-badge">Developer Reference</div>
+                   </div>
+                   <div className="card-body">
+                     <h3>REST API 상세 규격</h3>
+                     <p>서버 간 통신을 위한 요청/응답 전문 규격, 파라미터 상세 정의 및 에러 코드 명세</p>
+                   </div>
+                   <div className="card-footer">
+                     <span>규격서 바로가기</span>
+                     <span className="arrow">→</span>
+                   </div>
+                </a>
+             </div>
+
+             <div className="guide-resources mt-10">
+                <h3 className="section-subtitle">추가 리소스</h3>
+                <div className="resource-list card mt-4">
+                   <div className="resource-item">
+                      <span className="res-icon">💡</span>
+                      <div className="res-info">
+                        <h4>연동 시 유의사항</h4>
+                        <p>본인확인 서비스 연동 시 보안 인증 및 암호화 알고리즘 적용 가이드를 준수해야 합니다.</p>
+                      </div>
+                   </div>
+                   <div className="resource-item border-t">
+                      <span className="res-icon">⚙️</span>
+                      <div className="res-info">
+                        <h4>운영 지원 채널</h4>
+                        <p>기술적 문의사항은 Mobile-OK 운영 지원 포털을 통해 문의해 주시기 바랍니다.</p>
+                      </div>
+                   </div>
                 </div>
-              </a>
-            </div>
+             </div>
           </div>
         )}
       </main>
 
       <style>{`
-        :root { --p-text: #172B4D; --s-text: #42526E; --accent: #0052CC; --bg: #F4F5F7; }
-        .app-container { max-width: 1400px; margin: 0 auto; padding: 20px; color: var(--p-text); background: var(--bg); min-height: 100vh; font-family: 'Pretendard', -apple-system, sans-serif; }
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         
-        .main-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #EBECF0; padding-bottom: 15px; margin-bottom: 30px; }
-        .logo h1 { margin: 0; color: var(--accent); font-size: 1.8rem; font-weight: 800; }
-        .sub-logo-text { margin: 5px 0 0 0; font-size: 0.9rem; color: var(--s-text); }
-        .v-tag { font-size: 0.7rem; background: var(--accent); color: #fff; padding: 2px 10px; border-radius: 20px; margin-left: 8px; vertical-align: middle; }
-        
-        .main-nav button { background: none; border: none; padding: 10px 15px; font-weight: 700; cursor: pointer; color: var(--s-text); border-bottom: 3px solid transparent; font-size: 0.95rem; }
-        .main-nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-        .card { background: #fff; padding: 25px; border-radius: 12px; border: 1px solid #EBECF0; color: var(--p-text); }
-        .shadow-sm { box-shadow: 0 4px 12px rgba(9, 30, 66, 0.08); }
-        .section-title-lg { font-size: 1.3rem; font-weight: 800; color: var(--p-text); margin-bottom: 15px; }
-        .mb-0 { margin-bottom: 0 !important; }
-
-        textarea, input { 
-          width: 100%; border: 2px solid #DFE1E6; border-radius: 6px; padding: 10px; margin-top: 5px; 
-          background: #fff; color: var(--p-text) !important; font-size: 0.9rem; box-sizing: border-box; 
+        :root { 
+          --primary: #0052CC; 
+          --primary-dark: #0747A6;
+          --bg: #F4F5F7; 
+          --text: #172B4D; 
+          --text-muted: #6B778C;
+          --border: #DFE1E6; 
+          --success: #00875A;
+          --danger: #DE350B;
+          --indigo: #403294;
         }
-        textarea { height: 100px; resize: vertical; }
-        label { font-weight: 700; color: var(--s-text); font-size: 0.85rem; }
+        
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Pretendard', sans-serif; -webkit-font-smoothing: antialiased; }
+        .enterprise-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Header */
+        .enterprise-header { height: 72px; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 40px; border-bottom: 1px solid var(--border); z-index: 100; }
+        .brand-logo { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+        .logo-icon { width: 38px; height: 38px; background: var(--primary); border-radius: 10px; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.4rem; }
+        .logo-text h1 { margin: 0; font-size: 1.25rem; font-weight: 800; letter-spacing: -0.5px; }
+        .logo-text span { font-size: 0.75rem; color: var(--text-muted); }
+        .header-nav { display: flex; gap: 8px; }
+        .header-nav button { border: none; background: none; padding: 10px 18px; font-weight: 700; color: #42526E; cursor: pointer; border-radius: 6px; transition: 0.2s; font-size: 0.95rem; }
+        .header-nav button:hover { background: #F4F5F7; color: var(--primary); }
+        .header-nav button.active { background: #E9F2FF; color: var(--primary); }
 
-        .primary-btn { background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: 0.2s; }
-        .primary-btn:hover { background: #0047B3; }
-        .secondary-btn { background: #EBECF0; color: var(--s-text); border: none; padding: 10px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; }
-        .add-btn { background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; }
-        .cancel-btn { background: #F4F5F7; color: var(--s-text); border: none; padding: 10px 18px; border-radius: 6px; font-weight: 700; cursor: pointer; }
+        .main-viewport { flex: 1; overflow-y: auto; padding: 30px 40px; }
+        .view-container { max-width: 1300px; margin: 0 auto; }
+        
+        /* Layout */
+        .layout-split { display: grid; grid-template-columns: 380px 1fr; gap: 30px; align-items: start; }
+        .card { background: #fff; border-radius: 12px; padding: 24px; border: 1px solid var(--border); }
+        .shadow-sm { box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .shadow-md { box-shadow: 0 4px 12px rgba(9, 30, 66, 0.08); }
 
-        .action-group { display: flex; gap: 12px; margin-left: auto; }
+        /* History List */
+        .history-section { border-top: 1px solid var(--border); padding-top: 20px; }
+        .section-title { font-weight: 800; font-size: 0.85rem; color: var(--text); }
+        .text-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.75rem; font-weight: 600; padding: 4px; }
+        .text-btn:hover { color: var(--danger); text-decoration: underline; }
+        .history-list { list-style: none; padding: 0; margin: 10px 0; max-height: 350px; overflow-y: auto; }
+        .history-item { 
+          padding: 12px; margin-bottom: 8px; border-radius: 8px; border: 1px solid var(--border); 
+          background: #FBFBFC; cursor: pointer; transition: 0.2s;
+        }
+        .history-item:hover { border-color: var(--primary); background: #fff; transform: translateX(5px); box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .hist-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+        .dot { width: 6px; height: 6px; background: var(--primary); border-radius: 50%; }
+        .hist-time { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); }
+        .hist-preview { font-size: 0.85rem; color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .empty-hist { text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 20px; }
 
-        .analyzer-layout { display: grid; grid-template-columns: 360px 1fr; gap: 30px; }
-        .loading-state { text-align: center; padding: 100px 0; color: var(--s-text); }
-        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid var(--accent); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        /* Forms */
+        textarea, input[type="text"] { 
+          width: 100%; border: 2px solid var(--border); border-radius: 8px; padding: 12px; 
+          background: #fff !important; color: var(--text) !important; font-family: inherit; font-size: 1rem;
+          box-sizing: border-box; outline: none; transition: 0.2s;
+        }
+        textarea:focus, input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,82,204,0.1); }
+        textarea { height: 180px; resize: none; line-height: 1.5; }
+        .primary-btn { background: var(--primary); color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 0.95rem; }
+        .primary-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
+        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .primary-btn.fluid { width: 100%; padding: 14px; }
+        .secondary-btn { background: #EBECF0; color: #44546F; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 700; cursor: pointer; transition: 0.2s; font-size: 0.95rem; }
+        .secondary-btn:hover { background: #DFE1E6; }
+
+        /* Result Visualization */
+        .result-card { border-top: 4px solid var(--primary); }
+        .badge-primary { background: #EAE6FF; color: var(--indigo); font-weight: 800; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; }
+        .badge-secondary { background: #E3FCEF; color: #006644; font-weight: 800; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; margin-left: 8px; }
+        .res-label { font-size: 1.1rem; border-left: 5px solid var(--primary); padding-left: 15px; margin-bottom: 16px; font-weight: 800; }
+        
+        .markdown-content { font-size: 1.05rem; line-height: 1.7; color: var(--text); }
+        .markdown-content strong { font-weight: 800 !important; color: #000 !important; }
+        .markdown-content p { margin: 10px 0; }
+        .markdown-content ul { padding-left: 20px; margin: 10px 0; }
+        .markdown-content li { margin-bottom: 6px; }
+
+        .summary-box { background: #F4F5F7; padding: 20px; border-radius: 10px; border: 1px solid var(--border); }
+        
+        /* Mermaid Diagram Control */
+        .mermaid-outer { 
+          background: #fff; border: 1px solid var(--border); border-radius: 12px; 
+          margin: 16px 0; overflow: hidden; max-height: 400px;
+        }
+        .mermaid-container { display: flex; justify-content: center; padding: 15px; overflow: auto; }
+        
+        .insight-card { 
+          background: #EAE6FF; padding: 20px; border-radius: 12px; border: 1px solid #D1C6FF; 
+          color: #2D1E7A; font-weight: 500;
+        }
+        .insight-card strong { color: var(--indigo); font-weight: 900 !important; }
+
+        /* Guide Tab v2 */
+        .guide-hero { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: #fff; padding: 50px; border: none; display: flex; justify-content: space-between; align-items: center; border-radius: 16px; position: relative; overflow: hidden; }
+        .hero-content { z-index: 2; max-width: 60%; }
+        .hero-content h2 { font-size: 2.2rem; margin: 0 0 15px; font-weight: 800; }
+        .hero-content p { font-size: 1.1rem; opacity: 0.9; line-height: 1.6; margin: 0; }
+        .hero-tags { display: flex; gap: 8px; }
+        .tag { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+        .hero-illustration { font-size: 6rem; opacity: 0.2; transform: rotate(15deg); user-select: none; }
+
+        .guide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        .guide-card-v2 { background: #fff; border-radius: 16px; padding: 30px; text-decoration: none; color: inherit; display: flex; flex-direction: column; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid var(--border); }
+        .guide-card-v2:hover { transform: translateY(-8px); border-color: var(--primary); box-shadow: 0 15px 35px rgba(0,82,204,0.1); }
+        .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+        .icon-wrap { font-size: 3rem; background: #F4F5F7; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; border-radius: 20px; transition: 0.3s; }
+        .guide-card-v2:hover .icon-wrap { background: #E9F2FF; transform: scale(1.05); }
+        .link-badge { font-size: 0.7rem; font-weight: 800; color: var(--primary); background: #E9F2FF; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; }
+        .card-body h3 { font-size: 1.4rem; margin: 0 0 12px; color: var(--text); }
+        .card-body p { font-size: 1rem; color: var(--text-muted); line-height: 1.6; margin: 0; }
+        .card-footer { margin-top: auto; padding-top: 25px; display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--primary); font-size: 0.95rem; }
+        .arrow { font-size: 1.2rem; transition: 0.2s; }
+        .guide-card-v2:hover .arrow { transform: translateX(5px); }
+
+        .section-subtitle { font-size: 1.2rem; font-weight: 800; color: var(--text); }
+        .resource-list { padding: 0; }
+        .resource-item { display: flex; gap: 20px; padding: 25px; }
+        .res-icon { font-size: 1.8rem; }
+        .res-info h4 { margin: 0 0 5px; font-size: 1.05rem; }
+        .res-info p { margin: 0; color: var(--text-muted); font-size: 0.9rem; line-height: 1.5; }
+
+        /* Generic Utils */
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .mt-10 { margin-top: 40px; }
+        .loading-state { text-align: center; padding: 100px 0; color: var(--text-muted); }
+        .spinner-orbit { border: 4px solid rgba(0,0,0,0.05); border-top: 4px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        .res-title { font-size: 1.1rem; font-weight: 800; color: var(--p-text); border-left: 5px solid var(--accent); padding-left: 15px; margin-bottom: 15px; }
-        .summary-text { font-size: 1rem; line-height: 1.6; background: #FBFBFC; padding: 20px; border-radius: 8px; border: 1px solid #EBECF0; color: var(--p-text); }
-        
-        .def-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .def-table th { text-align: left; padding: 12px 15px; background: #FBFBFC; border-bottom: 2px solid #EBECF0; font-weight: 800; font-size: 0.85rem; color: var(--s-text); }
-        .def-table td { padding: 12px 15px; border-bottom: 1px solid #EBECF0; vertical-align: middle; word-break: break-all; }
-        
-        .code-cell { color: var(--accent); font-weight: 800; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
-        .data-text { color: var(--p-text) !important; font-size: 0.85rem; line-height: 1.5; }
-        .msg-text { color: #006644 !important; font-weight: 500; }
-
-        .edit-btn-small { background: #EAE6FF; color: #403294; border: none; padding: 5px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
-        .del-btn-small { background: #FFEBE6; color: #BF2600; border: none; padding: 5px 12px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
-        .small-edit-btn, .small-del-btn { background: #fff; border: 1px solid #DFE1E6; padding: 4px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: 700; cursor: pointer; }
-
-        .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; }
-        .page-btn { background: #fff; border: 1px solid #DFE1E6; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 700; color: var(--s-text); }
-        .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .page-num-btn { background: #fff; border: 1px solid #DFE1E6; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 0.8rem; font-weight: 700; color: var(--s-text); cursor: pointer; }
-        .page-num-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-
-        .animate-fade { animation: fadeIn 0.3s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
-        .history-list li { padding: 10px; border-bottom: 1px solid #EBECF0; cursor: pointer; }
-        .h-input { font-weight: 600; color: var(--p-text); font-size: 0.85rem; display: block; }
-        .h-date { font-size: 0.7rem; color: var(--s-text); }
-
-        .guide-link-card { display: flex; align-items: center; gap: 20px; text-decoration: none; transition: 0.2s; cursor: pointer; }
-        .guide-link-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(9, 30, 66, 0.12); border-color: var(--accent); }
-        .guide-icon { font-size: 2rem; background: #F4F5F7; padding: 15px; border-radius: 12px; }
-        .link-badge { display: inline-block; padding: 4px 12px; background: #EAE6FF; color: #403294; border-radius: 4px; font-size: 0.75rem; font-weight: 700; }
-        
-        .border-accent { border-color: var(--accent) !important; }
-        .grid { display: grid; }
-        .flex { display: flex; }
-        .justify-end { justify-content: flex-end; }
-        .justify-center { justify-content: center; }
-        .items-center { align-items: center; }
-        .gap-2 { gap: 0.5rem; }
-        .w-auto { width: auto; }
-        .px-10 { padding-left: 2.5rem; padding-right: 2.5rem; }
-
-        .markdown-body ul { padding-left: 1.2rem; margin: 0.5rem 0; }
-        .markdown-body li { margin-bottom: 0.2rem; }
+        .animate-fade { animation: fadeIn 0.4s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-slide-up { animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { from { transform: translateY(15px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .diag-err { color: var(--danger); padding: 15px; font-weight: 700; text-align: center; }
+        .empty-state { text-align: center; padding: 100px 40px; color: var(--text-muted); border: 2px dashed var(--border); border-radius: 16px; }
+        .empty-icon { font-size: 4rem; opacity: 0.2; margin-bottom: 20px; }
       `}</style>
     </div>
   );
