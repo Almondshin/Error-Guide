@@ -1,0 +1,36 @@
+server:
+  port: 10999
+
+spring:
+  application:
+    name: error
+  # profiles:
+  #   active: local
+  datasource:
+    url: jdbc:mariadb://localhost:3306/error_db
+    driver-class-name: org.mariadb.jdbc.Driver
+    username: root
+    password: password
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    defer-datasource-initialization: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MariaDBDialect
+  sql:
+    init:
+      mode: never
+  session:
+    mode: none
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
+    url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${gemini.api.key}"
+    model: "gemini-2.0-flash"
