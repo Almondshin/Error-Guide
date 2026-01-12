@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>해결 사례 저장소 - MOK Error Agent</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Pretendard', sans-serif; padding-top: 70px; }
+        .container { max-width: 1200px; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
+        .table thead { background-color: #f8f9fa; }
+        .btn-primary { background-color: #007bff; border: none; }
+
+        /* Navigation */
+        .navbar { background-color: #1e293b !important; }
+        .navbar-brand, .nav-link { color: rgba(255,255,255,0.9) !important; }
+        .nav-link.active { color: #fff !important; font-weight: bold; border-bottom: 2px solid #fff; }
+        .nav-link:hover { color: #fff !important; }
+
+        /* Pagination */
+        .pagination { margin-bottom: 0; }
+        .page-link { color: #1e293b; border: none; margin: 0 2px; border-radius: 5px !important; }
+        .page-item.active .page-link { background-color: #1e293b; color: #fff; }
+        .size-selector .btn { border: 1px solid #dee2e6; color: #6c757d; }
+        .size-selector .btn.active { background-color: #6c757d; color: #fff; border-color: #6c757d; }
+
+        /* Textarea Styling */
+        .fixed-font-textarea {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg fixed-top shadow-sm mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/dashboard">MOK Error Agent</a>
+        <div class="navbar-nav ms-auto">
+            <a class="nav-item nav-link" href="/dashboard">🔍 실시간 진단</a>
+            <a class="nav-item nav-link" href="/admin/management">📖 에러코드 관리</a>
+            <a class="nav-item nav-link active" href="/admin/cases">💡 해결 사례 저장소</a>
+            <a class="nav-item nav-link" href="/admin/history">📜 진단 히스토리</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold">💡 해결 사례 저장소 관리</h2>
+        <button class="btn btn-primary" onclick="openModal()">+ 신규 사례 등록</button>
+    </div>
+
+    <div class="card p-4">
+        <div class="mb-3">
+            <input type="text" class="form-control" id="searchBar" placeholder="에러 코드 또는 해결 방법으로 검색..." oninput="filterTable()">
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" id="caseTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>에러 코드</th>
+                        <th>요청 상세</th>
+                        <th>해결 방법</th>
+                        <th>상태</th>
+                        <th class="text-center">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="caseBody">
+                    <tr th:if="${cases.totalElements == 0}">
+                        <td colspan="6" class="text-center py-4 text-muted">등록된 해결 사례가 없습니다.</td>
+                    </tr>
+                    <tr th:each="item : ${cases.content}">
+                        <td th:text="${item.id}"></td>
+                        <td class="fw-bold text-primary" th:text="${item.errorCode}"></td>
+                        <td><small class="text-truncate d-inline-block" style="max-width: 250px;" th:text="${item.requestDetail}"></small></td>
+                        <td><small class="text-truncate d-inline-block" style="max-width: 350px;" th:text="${item.resolution}"></small></td>
+                        <td><span class="badge" th:classappend="${item.status == '완료' ? 'bg-success' : 'bg-warning'}" th:text="${item.status}"></span></td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-outline-secondary me-1" th:onclick="'editCase(' + ${item.id} + ')'">수정</button>
+                            <button class="btn btn-sm btn-outline-danger" th:onclick="'deleteCase(' + ${item.id} + ')'">삭제</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Control Bar -->
+        <div class="d-flex justify-content-between align-items-center mt-4">
+            <nav>
+                <ul class="pagination pagination-sm" id="pagination">
+                    <!-- Pagination items populated by JS -->
+                </ul>
+            </nav>
+            <div class="size-selector d-flex align-items-center gap-2">
+                <span class="text-muted small">페이지 당 개수:</span>
+                <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-secondary size-btn" data-size="15" onclick="changeSize(15)">15</button>
+                    <button type="button" class="btn btn-outline-secondary size-btn" data-size="30" onclick="changeSize(30)">30</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="caseModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">해결 사례 등록</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="caseForm">
+                    <input type="hidden" id="formId">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">에러 코드</label>
+                            <input type="text" class="form-control" id="formCode" list="errorList" required>
+                            <datalist id="errorList"></datalist>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">상태</label>
+                            <select class="form-select" id="formStatus">
+                                <option value="완료">완료</option>
+                                <option value="진행중">진행중</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">요청 상세 (이메일 원문 등 맥락)</label>
+                        <textarea class="form-control fixed-font-textarea" id="formRequestDetail" rows="5" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">해결 방법 및 가이드 (AI 보고서 등)</label>
+                        <textarea class="form-control fixed-font-textarea" id="formResolution" rows="15" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">로그 컨텍스트 (선택)</label>
+                        <textarea class="form-control fixed-font-textarea" id="formLogContext" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" onclick="saveCase()">저장하기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let cases = [];
+    let currentPage = 0;
+    let currentSize = 15;
+    let totalPages = 0;
+    let errorDictionary = [];
+    const modal = new bootstrap.Modal(document.getElementById('caseModal'));
+
+    const swalCustom = Swal.mixin({
+        confirmButtonColor: '#1e293b',
+        cancelButtonColor: '#6c757d',
+        background: '#f8f9fa'
+    });
+
+    async function init() {
+        await loadErrors();
+        await loadCases();
+    }
+
+    async function loadErrors() {
+        const response = await fetch('/api/v1/diagnose/errors/all');
+        errorDictionary = await response.json();
+        const datalist = document.getElementById('errorList');
+        datalist.innerHTML = errorDictionary.map(e => `<option value="${e.code}">${e.code} - ${e.description}</option>`).join('');
+    }
+
+    async function loadCases(page = 0) {
+        currentPage = page;
+        const response = await fetch(`/api/admin/cases?page=${page}&size=${currentSize}&sort=id,desc`);
+        const data = await response.json();
+        cases = data.content;
+        totalPages = data.totalPages;
+        renderTable(cases);
+        renderPagination();
+        updateSizeButtons();
+    }
+
+    function renderTable(data) {
+        const body = document.getElementById('caseBody');
+        if (data.length === 0) {
+            body.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">등록된 해결 사례가 없습니다.</td></tr>';
+            return;
+        }
+        body.innerHTML = data.map(c => `
+            <tr>
+                <td>${c.id}</td>
+                <td class="fw-bold text-primary">${c.errorCode}</td>
+                <td><small class="text-truncate d-inline-block" style="max-width: 250px;">${c.requestDetail}</small></td>
+                <td><small class="text-truncate d-inline-block" style="max-width: 350px;">${c.resolution}</small></td>
+                <td><span class="badge ${c.status === '완료' ? 'bg-success' : 'bg-warning'}">${c.status}</span></td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-secondary me-1" onclick="editCase(${c.id})">수정</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteCase(${c.id})">삭제</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function renderPagination() {
+        const pagination = document.getElementById('pagination');
+        let html = '';
+
+        // Previous
+        html += `<li class="page-item ${currentPage === 0 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="loadCases(${currentPage - 1})">&laquo;</a>
+                 </li>`;
+
+        // Pages
+        for (let i = 0; i < totalPages; i++) {
+            html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="loadCases(${i})">${i + 1}</a>
+                     </li>`;
+        }
+
+        // Next
+        html += `<li class="page-item ${currentPage === totalPages - 1 || totalPages === 0 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" onclick="loadCases(${currentPage + 1})">&raquo;</a>
+                 </li>`;
+
+        pagination.innerHTML = html;
+    }
+
+    function updateSizeButtons() {
+        document.querySelectorAll('.size-btn').forEach(btn => {
+            if (parseInt(btn.dataset.size) === currentSize) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    function changeSize(size) {
+        currentSize = size;
+        loadCases(0);
+    }
+
+    function filterTable() {
+        const query = document.getElementById('searchBar').value.toLowerCase();
+        if (!query) {
+            loadCases(currentPage);
+            return;
+        }
+        const filtered = cases.filter(c =>
+            c.errorCode.toLowerCase().includes(query) ||
+            c.resolution.toLowerCase().includes(query) ||
+            c.requestDetail.toLowerCase().includes(query)
+        );
+        renderTable(filtered);
+    }
+
+    function openModal() {
+        document.getElementById('modalTitle').innerText = '신규 사례 등록';
+        document.getElementById('caseForm').reset();
+        document.getElementById('formId').value = '';
+        modal.show();
+    }
+
+    function editCase(id) {
+        const c = cases.find(item => item.id === id);
+        document.getElementById('modalTitle').innerText = '해결 사례 수정';
+        document.getElementById('formId').value = c.id;
+        document.getElementById('formCode').value = c.errorCode;
+        document.getElementById('formStatus').value = c.status;
+        document.getElementById('formRequestDetail').value = c.requestDetail;
+        document.getElementById('formResolution').value = c.resolution;
+        document.getElementById('formLogContext').value = c.logContext || '';
+        modal.show();
+    }
+
+    async function saveCase() {
+        const id = document.getElementById('formId').value;
+        const data = {
+            errorCode: document.getElementById('formCode').value,
+            status: document.getElementById('formStatus').value,
+            requestDetail: document.getElementById('formRequestDetail').value,
+            resolution: document.getElementById('formResolution').value,
+            logContext: document.getElementById('formLogContext').value
+        };
+
+        if (!data.errorCode || !data.requestDetail || !data.resolution) {
+            swalCustom.fire({
+                icon: 'warning',
+                title: '입력 오류',
+                text: '필수 항목을 입력해주세요.'
+            });
+            return;
+        }
+
+        const url = id ? `/api/admin/cases/${id}` : '/api/admin/cases';
+        const method = id ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            modal.hide();
+            swalCustom.fire({
+                icon: 'success',
+                title: '저장 완료',
+                timer: 1500,
+                showConfirmButton: false
+            });
+            loadCases(currentPage);
+        } else {
+            swalCustom.fire({
+                icon: 'error',
+                title: '저장 실패',
+                text: '사례 정보를 저장하는 중 오류가 발생했습니다.',
+                iconColor: '#e11d48'
+            });
+        }
+    }
+
+    async function deleteCase(id) {
+        const result = await swalCustom.fire({
+            title: '삭제 확인',
+            text: '이 사례를 삭제하시겠습니까?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '삭제',
+            cancelButtonText: '취소'
+        });
+
+        if (result.isConfirmed) {
+            const response = await fetch(`/api/admin/cases/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                swalCustom.fire({
+                    icon: 'success',
+                    title: '삭제 완료',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+                loadCases(currentPage);
+            } else {
+                swalCustom.fire({
+                    icon: 'error',
+                    title: '삭제 실패',
+                    text: '사례 정보를 삭제하는 중 오류가 발생했습니다.',
+                    iconColor: '#e11d48'
+                });
+            }
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>

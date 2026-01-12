@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>진단 히스토리 - MOK Error Agent</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Pretendard', sans-serif; padding-top: 70px; }
+        .container { max-width: 1200px; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .table thead { background-color: #f8f9fa; }
+        .navbar { background-color: #1e293b !important; }
+        .navbar-brand, .nav-link { color: rgba(255,255,255,0.9) !important; }
+        .nav-link.active { color: #fff !important; font-weight: bold; border-bottom: 2px solid #fff; }
+        .nav-link:hover { color: #fff !important; }
+
+        /* Table Refinement */
+        .history-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .history-table th, .history-table td {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .col-date { width: 180px; }
+        .col-code { width: 120px; font-weight: bold; }
+        .col-context { width: 15%; }
+        .col-report { width: auto; }
+        .col-action { width: 200px; }
+
+        .btn-group-nowrap {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            flex-wrap: nowrap;
+        }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg fixed-top shadow-sm mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/dashboard">MOK Error Agent</a>
+        <div class="navbar-nav ms-auto">
+            <a class="nav-item nav-link" href="/dashboard">🔍 실시간 진단</a>
+            <a class="nav-item nav-link" href="/admin/management">📖 에러코드 관리</a>
+            <a class="nav-item nav-link" href="/admin/cases">💡 해결 사례 저장소</a>
+            <a class="nav-item nav-link active" href="/admin/history">📜 진단 히스토리</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container py-4">
+    <h2 class="fw-bold mb-4">📜 진단 히스토리</h2>
+
+    <div class="card p-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle history-table">
+                <thead>
+                    <tr>
+                        <th class="col-date">날짜</th>
+                        <th class="col-code">에러코드</th>
+                        <th class="col-context">기술 맥락</th>
+                        <th class="col-report">AI 보고서</th>
+                        <th class="text-center col-action">관리</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="history : ${histories}" th:id="'history-row-' + ${history.id}">
+                        <td th:text="${#temporals.format(history.createdAt, 'yyyy-MM-dd HH:mm:ss')}"></td>
+                        <td><span class="badge bg-primary" th:text="${history.errorCode}"></span></td>
+                        <td th:title="${history.description}" th:text="${history.description}"></td>
+                        <td th:title="${history.aiReport}" th:text="${#strings.abbreviate(history.aiReport, 100)}"></td>
+                        <td class="text-center">
+                            <div class="btn-group-nowrap">
+                                <button class="btn btn-sm btn-info text-white" th:onclick="'showDetail(' + ${history.id} + ')'">상세보기</button>
+                                <button class="btn btn-sm btn-success" th:onclick="'registerCase(' + ${history.id} + ')'">사례 등록</button>
+                                <button class="btn btn-sm btn-outline-danger" th:onclick="'deleteHistory(' + ${history.id} + ')'">삭제</button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Report Modal -->
+<div class="modal fade" id="reportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">AI 진단 보고서 상세</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalReportContent"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const reportModal = new bootstrap.Modal(document.getElementById('reportModal'));
+
+    const swalCustom = Swal.mixin({
+        confirmButtonColor: '#1e293b',
+        cancelButtonColor: '#6c757d',
+        background: '#f8f9fa'
+    });
+
+    async function showDetail(id) {
+        const response = await fetch(`/api/admin/history/detail/${id}`);
+        if (response.ok) {
+            const data = await response.json();
+            document.getElementById('modalReportContent').innerHTML = marked.parse(data.aiReport);
+            reportModal.show();
+        }
+    }
+
+    async function registerCase(id) {
+        const result = await swalCustom.fire({
+            title: '사례 등록',
+            text: '이 진단 내용을 해결 사례 저장소에 등록하시겠습니까? 등록 후 히스토리에서 삭제됩니다.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: '등록',
+            cancelButtonText: '취소'
+        });
+
+        if (result.isConfirmed) {
+            const response = await fetch(`/api/admin/history/clone-to-resolution/${id}`, { method: 'POST' });
+            if (response.ok) {
+                swalCustom.fire({
+                    icon: 'success',
+                    title: '등록 완료',
+                    text: '지식 저장소에 등록되었습니다.',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+                // Remove the row from DOM
+                const row = document.getElementById('history-row-' + id);
+                if (row) row.remove();
+            } else {
+                swalCustom.fire({
+                    icon: 'error',
+                    title: '등록 실패',
+                    text: '사례 등록 중 오류가 발생했습니다.',
+                    iconColor: '#e11d48'
+                });
+            }
+        }
+    }
+
+    async function deleteHistory(id) {
+        const result = await swalCustom.fire({
+            title: '삭제 확인',
+            text: '히스토리를 삭제하시겠습니까?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '삭제',
+            cancelButtonText: '취소'
+        });
+
+        if (result.isConfirmed) {
+            const response = await fetch(`/api/admin/history/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                const row = document.getElementById('history-row-' + id);
+                if (row) row.remove();
+            } else {
+                swalCustom.fire({
+                    icon: 'error',
+                    title: '삭제 실패',
+                    text: '히스토리 삭제 중 오류가 발생했습니다.',
+                    iconColor: '#e11d48'
+                });
+            }
+        }
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+@startuml
+autonumber
+hide footbox
+
+actor 사용자 as U
+participant "이용기관 JavaScript " as JS
+participant "이용기관 서버" as CL
+participant "MobileOK 표준창\n(Popup/Redirect)" as STD
+participant "MobileOK 본인확인서버" as MOK
+participant "인증사업자 SKT/KT/LGU+" as CO
+
+group 표준창 호출
+  JS -> STD : 휴대폰 본인확인 자바스크립트 로딩
+  return 로딩 완료
+  U -> JS : 버튼 클릭 \n(표준창 호출)
+  JS -> CL : POST /mok/client-info\n(MOKReqClientInfo 생성 요청)
+  return 200 OK (MOKReqClientInfo)
+  JS -> STD : 표준창 오픈 + MOKReqClientInfo 전달
+end
+
+STD -> MOK : 본인확인 플로우 진행
+MOK -> CO : 본인확인 플로우 진행
+CO -[#blue]-> U : <color:blue>본인확인 인증번호\nSMS 또는 PASS 인증 PUSH
+U -> STD : 본인확인 OTP 입력 및 결과확인 클릭
+STD -> MOK : 본인확인 결과 요청
+MOK -> CO : 이동통신사 본인확인 검증 요청
+return 본인확인 검증 결과 (암호화된 개인정보/CI/DI)
+
+group (Svr→Svr)
+  MOK --> STD : <color:green>(본인확인 임시 결과 토큰)</color> 응답
+
+  ' TTL은 토큰 응답 직후부터 시작
+  note over MOK #lightyellow
+    (본인확인 임시 결과 토큰) + 검증 결과 임시 보관 (TTL 5초)
+  end note
+  MOK -> MOK ++ : 임시 보관 시작
+
+  STD -> CL : 본인확인 결과 응답 \n(<color:green>본인확인 임시 결과 토큰</color>)
+'  JS -> CL : <color:green>본인확인 임시 결과 토큰</color> 서버 전달
+
+  alt 결과 토큰 요청이 TTL(≤5초) 내 도착 (성공)
+    CL -> MOK : 본인확인 결과 요청 \n<color:green>(본인확인 임시 결과 토큰)</color>
+    MOK --> CL : 성공 응답 \n(암호화된 개인정보, CI, DI)
+    MOK -> MOK -- : 토큰 소모 후 폐기
+  else TTL 만료 후(>5초) 도착 (실패)
+    ... 5초 경과 ...
+    MOK -> MOK -- : TTL 만료(폐기)
+    CL -> MOK : 본인확인 결과 요청(지연)
+    MOK --> CL : 실패 응답 \n(TokenExpired/5033 유효시간 만료)
+
+    loop TTL 만료 이후 추가 요청들
+      CL -> MOK : 본인확인 결과 재요청
+      MOK --> CL : 실패 응답 \n(TokenExpired/5033 유효시간 만료)
+    end
+  end
+
+  CL -> CL : 본인확인 결과 \nRSA 비밀키 복호화
+  note right of CL
+    (성공 케이스에서만)
+    개인정보, CI, DI 활용
+    개인정보 / CI 검증
+  end note
+  CL -> JS : 이용기관 인증 결과 처리
+end
+
+@enduml

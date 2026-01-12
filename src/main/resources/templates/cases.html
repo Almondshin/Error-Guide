@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Mobile-OK 지식베이스 관리</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Pretendard', sans-serif; }
+        .container { max-width: 1200px; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .table { background: white; border-radius: 10px; overflow: hidden; }
+        .btn-primary { background-color: #007bff; border: none; font-weight: bold; }
+        .nav-link { font-weight: 600; color: #495057; }
+        .text-truncate-multiline { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm sticky-top mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold text-primary" href="/">Mobile-OK Diagnostic</a>
+        <div class="navbar-nav ms-auto">
+            <a class="nav-item nav-link" href="/">🏠 홈</a>
+            <a class="nav-item nav-link" href="/dashboard">🔍 진단 대시보드</a>
+            <a class="nav-item nav-link active" href="/admin/management">⚙️ 지식 베이스 관리</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="fw-bold text-dark">Mobile-OK 지식베이스 관리</h1>
+    </div>
+
+    <div class="card p-4 mb-4">
+        <h5 class="fw-bold mb-3">새로운 해결 사례 등록</h5>
+        <div class="row g-3">
+            <div class="col-md-2">
+                <label class="form-label fw-bold">에러 코드</label>
+                <input type="text" id="errorCode" class="form-control" placeholder="예: 5033">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label fw-bold">요청 상세 요건 (이메일 원문 등)</label>
+                <textarea id="requestDetail" class="form-control" rows="3" placeholder="상세 요청 맥락을 입력하세요..."></textarea>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label fw-bold">해결 방법 및 가이드</label>
+                <textarea id="resolution" class="form-control" rows="3" placeholder="해결 방법 및 가이드를 입력하세요..."></textarea>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-bold">상태</label>
+                <select id="status" class="form-select">
+                    <option value="완료">완료</option>
+                    <option value="미완료">미완료</option>
+                </select>
+            </div>
+            <div class="col-md-10 d-flex align-items-end">
+                <button class="btn btn-primary w-100" onclick="saveCase()">지식 베이스 등록</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-4">ID</th>
+                    <th>에러 코드</th>
+                    <th>요청 상세 요건</th>
+                    <th>해결 방법</th>
+                    <th>상태</th>
+                    <th class="text-center pe-4">관리</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr th:each="case : ${cases}">
+                    <td class="ps-4" th:text="${case.id}"></td>
+                    <td><span class="badge bg-primary" th:text="${case.errorCode}"></span></td>
+                    <td><div class="text-truncate-multiline" th:text="${case.requestDetail}"></div></td>
+                    <td><div class="text-truncate-multiline" th:text="${case.resolution}"></div></td>
+                    <td><span class="badge" th:classappend="${case.status == '완료' ? 'bg-success' : 'bg-warning'}" th:text="${case.status}"></span></td>
+                    <td class="text-center pe-4">
+                        <button class="btn btn-sm btn-danger" th:onclick="'deleteCase(' + ${case.id} + ')'">삭제</button>
+                    </td>
+                </tr>
+                <tr th:if="${#lists.isEmpty(cases)}">
+                    <td colspan="6" class="text-center py-4 text-muted">등록된 사례가 없습니다.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    async function saveCase() {
+        const errorCode = document.getElementById('errorCode').value;
+        const requestDetail = document.getElementById('requestDetail').value;
+        const resolution = document.getElementById('resolution').value;
+        const status = document.getElementById('status').value;
+
+        if (!requestDetail || !resolution) {
+            alert('요청 상세 요건과 해결 방법을 입력해주세요.');
+            return;
+        }
+
+        const response = await fetch('/api/v1/admin/cases', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ errorCode, requestDetail, resolution, status })
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('등록에 실패했습니다.');
+        }
+    }
+
+    async function deleteCase(id) {
+        if (!confirm('정말 삭제하시겠습니까?')) return;
+
+        const response = await fetch(`/api/v1/admin/cases/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('삭제에 실패했습니다.');
+        }
+    }
+</script>
+</body>
+</html>

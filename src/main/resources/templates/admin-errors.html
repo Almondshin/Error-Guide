@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>에러코드 관리 - MOK Error Agent</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Pretendard', sans-serif; padding-top: 70px; }
+        .container { max-width: 1200px; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); margin-bottom: 25px; }
+        .table thead { background-color: #f8f9fa; }
+        .btn-primary { background-color: #007bff; border: none; }
+
+        /* Navigation */
+        .navbar { background-color: #1e293b !important; }
+        .navbar-brand, .nav-link { color: rgba(255,255,255,0.9) !important; }
+        .nav-link.active { color: #fff !important; font-weight: bold; border-bottom: 2px solid #fff; }
+        .nav-link:hover { color: #fff !important; }
+
+        /* Table Column Widths */
+        .col-code { width: 100px; }
+        .col-step { width: 120px; }
+        .col-desc { width: auto; }
+        .col-msg { width: 250px; }
+        .col-action { width: 150px; }
+
+        /* Pagination Refinement */
+        .pagination-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 25px;
+            margin-top: 20px;
+        }
+        .size-selector .btn {
+            padding: 5px 15px;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-expand-lg fixed-top shadow-sm mb-4">
+    <div class="container">
+        <a class="navbar-brand fw-bold" href="/">MOK Error Agent</a>
+        <div class="navbar-nav ms-auto">
+            <a class="nav-item nav-link" href="/">🔍 실시간 진단</a>
+            <a class="nav-item nav-link active" href="/admin/management">📖 에러코드 관리</a>
+            <a class="nav-item nav-link" href="/admin/cases">💡 해결 사례 저장소</a>
+            <a class="nav-item nav-link" href="/admin/history">📜 진단 히스토리</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold">📖 에러코드 관리</h2>
+        <button class="btn btn-primary" onclick="openModal()">+ 신규 에러 등록</button>
+    </div>
+
+    <div class="card p-4">
+        <div class="mb-3">
+            <div class="input-group">
+                <input type="text" class="form-control" id="searchBar" placeholder="에러 코드 또는 설명으로 검색..." onkeypress="handleSearch(event)">
+                <button class="btn btn-outline-secondary" type="button" onclick="triggerSearch()">검색</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" id="errorTable">
+                <thead>
+                    <tr>
+                        <th class="col-code">코드</th>
+                        <th class="col-step">단계</th>
+                        <th class="col-desc">설명</th>
+                        <th class="col-msg">고객 메시지</th>
+                        <th class="text-center col-action">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="errorBody">
+                    <!-- Data populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination & Size Selector -->
+        <div class="pagination-container">
+            <nav aria-label="Page navigation">
+                <ul class="pagination mb-0" id="pagination">
+                    <!-- Pagination items populated by JS -->
+                </ul>
+            </nav>
+
+            <div class="size-selector btn-group" role="group" id="sizeSelector">
+                <button type="button" class="btn btn-outline-secondary" onclick="changePageSize(15)" id="size-15">15</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="changePageSize(30)" id="size-30">30</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="changePageSize(100)" id="size-100">100</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">에러 정보 등록</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="errorForm">
+                    <input type="hidden" id="formId">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">에러 코드</label>
+                            <input type="text" class="form-control" id="formCode" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">에러 레이어</label>
+                            <select class="form-select" id="formLayer">
+                                <option value="INFRASTRUCTURE">INFRASTRUCTURE</option>
+                                <option value="APPLICATION">APPLICATION</option>
+                                <option value="DOMAIN">DOMAIN</option>
+                                <option value="TELCO">TELCO</option>
+                                <option value="CRYPTO">CRYPTO</option>
+                                <option value="SYSTEM">SYSTEM</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">시스템 플로우 단계</label>
+                        <select class="form-select" id="formStep">
+                            <option value="인증요청">인증요청</option>
+                            <option value="검증요청">검증요청</option>
+                            <option value="토큰요청">토큰요청</option>
+                            <option value="ARS요청">ARS요청</option>
+                            <option value="기타">기타</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">에러 설명 (운영용)</label>
+                        <textarea class="form-control" id="formDescription" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">고객 노출 메시지</label>
+                        <textarea class="form-control" id="formCustomerMessage" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary" onclick="saveError()">저장하기</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let currentPage = 0;
+    let pageSize = 15;
+    let totalPages = 0;
+    let errors = [];
+    let currentQuery = '';
+    const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+    let isEdit = false;
+
+    const swalCustom = Swal.mixin({
+        confirmButtonColor: '#1e293b',
+        cancelButtonColor: '#6c757d',
+        background: '#f8f9fa'
+    });
+
+    async function loadErrors(page = 0) {
+        currentPage = page;
+        const url = `/api/admin/errors?page=${page}&size=${pageSize}&sort=errorCode,asc${currentQuery ? '&query=' + encodeURIComponent(currentQuery) : ''}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        errors = data.content;
+        totalPages = data.totalPages;
+        renderTable(errors);
+        renderPagination();
+        updateSizeButtons();
+    }
+
+    function renderTable(data) {
+        const body = document.getElementById('errorBody');
+        body.innerHTML = data.map(e => `
+            <tr>
+                <td class="fw-bold text-primary">${e.errorCode}</td>
+                <td><span class="badge bg-light text-dark border">${e.systemFlowStep}</span></td>
+                <td>${e.description}</td>
+                <td><small class="text-muted">${e.customerMessage || '-'}</small></td>
+                <td class="text-center">
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="editError(${e.id})">수정</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteError(${e.id}, '${e.errorCode}')">삭제</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function renderPagination() {
+        const pagination = document.getElementById('pagination');
+        let html = '';
+
+        // Previous
+        html += `<li class="page-item ${currentPage === 0 ? 'disabled' : ''}">
+                    <a class="page-link" href="javascript:void(0)" onclick="loadErrors(${currentPage - 1})">이전</a>
+                 </li>`;
+
+        // Page Numbers (Show max 5 pages around current)
+        let start = Math.max(0, currentPage - 2);
+        let end = Math.min(totalPages, start + 5);
+        if (end - start < 5) start = Math.max(0, end - 5);
+
+        for (let i = start; i < end; i++) {
+            html += `<li class="page-item ${currentPage === i ? 'active' : ''}">
+                        <a class="page-link" href="javascript:void(0)" onclick="loadErrors(${i})">${i + 1}</a>
+                     </li>`;
+        }
+
+        // Next
+        html += `<li class="page-item ${currentPage === totalPages - 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="javascript:void(0)" onclick="loadErrors(${currentPage + 1})">다음</a>
+                 </li>`;
+
+        pagination.innerHTML = html;
+    }
+
+    function updateSizeButtons() {
+        document.querySelectorAll('.size-selector .btn').forEach(btn => btn.classList.remove('active', 'btn-secondary'));
+        document.querySelectorAll('.size-selector .btn').forEach(btn => btn.classList.add('btn-outline-secondary'));
+
+        const activeBtn = document.getElementById(`size-${pageSize}`);
+        if (activeBtn) {
+            activeBtn.classList.remove('btn-outline-secondary');
+            activeBtn.classList.add('active', 'btn-secondary');
+        }
+    }
+
+    function changePageSize(size) {
+        pageSize = size;
+        loadErrors(0);
+    }
+
+    function handleSearch(event) {
+        if (event.key === 'Enter') {
+            triggerSearch();
+        }
+    }
+
+    function triggerSearch() {
+        currentQuery = document.getElementById('searchBar').value.trim();
+        loadErrors(0);
+    }
+
+    function openModal() {
+        isEdit = false;
+        document.getElementById('modalTitle').innerText = '신규 에러 등록';
+        document.getElementById('formId').value = '';
+        document.getElementById('formCode').disabled = false;
+        document.getElementById('errorForm').reset();
+        modal.show();
+    }
+
+    function editError(id) {
+        isEdit = true;
+        const error = errors.find(e => e.id === id);
+        document.getElementById('modalTitle').innerText = '에러 정보 수정';
+        document.getElementById('formId').value = error.id;
+        document.getElementById('formCode').value = error.errorCode;
+        document.getElementById('formCode').disabled = false;
+        document.getElementById('formLayer').value = error.errorLayer;
+        document.getElementById('formStep').value = error.systemFlowStep;
+        document.getElementById('formDescription').value = error.description;
+        document.getElementById('formCustomerMessage').value = error.customerMessage;
+        modal.show();
+    }
+
+    async function saveError() {
+        const data = {
+            id: document.getElementById('formId').value || null,
+            errorCode: document.getElementById('formCode').value,
+            errorLayer: document.getElementById('formLayer').value,
+            systemFlowStep: document.getElementById('formStep').value,
+            description: document.getElementById('formDescription').value,
+            customerMessage: document.getElementById('formCustomerMessage').value
+        };
+
+        if (!data.errorCode || !data.description) {
+            swalCustom.fire({
+                icon: 'warning',
+                title: '입력 오류',
+                text: '필수 항목을 입력해주세요.'
+            });
+            return;
+        }
+
+        const url = isEdit ? '/api/admin/errors/update' : '/api/admin/errors/add';
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        if (response.ok) {
+            modal.hide();
+            swalCustom.fire({
+                icon: 'success',
+                title: '저장 완료',
+                timer: 1500,
+                showConfirmButton: false
+            });
+            loadErrors(currentPage);
+        } else {
+            swalCustom.fire({
+                icon: 'error',
+                title: '저장 실패',
+                text: '에러 정보를 저장하는 중 오류가 발생했습니다.',
+                iconColor: '#e11d48'
+            });
+        }
+    }
+
+    async function deleteError(id, code) {
+        const result = await swalCustom.fire({
+            title: '삭제 확인',
+            text: `에러 코드 [${code}]를 삭제하시겠습니까?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: '삭제',
+            cancelButtonText: '취소'
+        });
+
+        if (result.isConfirmed) {
+            const response = await fetch(`/api/admin/errors/delete/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                swalCustom.fire({
+                    icon: 'success',
+                    title: '삭제 완료',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+                loadErrors(currentPage);
+            } else {
+                swalCustom.fire({
+                    icon: 'error',
+                    title: '삭제 실패',
+                    text: '에러 정보를 삭제하는 중 오류가 발생했습니다.',
+                    iconColor: '#e11d48'
+                });
+            }
+        }
+    }
+
+    loadErrors();
+</script>
+</body>
+</html>

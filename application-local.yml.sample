@@ -1,0 +1,15 @@
+# This is a sample configuration file for local development.
+# Rename this file to 'application-local.yml' and fill in the required values.
+# Do NOT commit the actual 'application-local.yml' to version control.
+
+gemini:
+  api:
+    key: "YOUR_GEMINI_API_KEY_HERE"
+    # url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    # model: "gemini-2.0-flash"
+
+spring:
+  datasource:
+    url: jdbc:mariadb://localhost:3306/error_db
+    username: root
+    password: password
