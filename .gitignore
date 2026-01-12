@@ -38,3 +38,4 @@ out/
 
 ### Compiled class files ###
 *.class
+mysql_data/
